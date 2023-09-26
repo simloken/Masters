@@ -6,8 +6,7 @@ import matplotlib.pyplot as plt
 #TODO
 #PARTICLE OBJECTS FOR SCALABILITY + TYPES ETC. obj(boson/fermion)
 #wavefunction shape and size defined on call
-#GPU usage
-#decorator optimization
+#decorator optimization ?
 
 if tf.config.experimental.list_physical_devices("GPU"):
     print("Using GPU")
@@ -182,7 +181,6 @@ def print_trainable_variables(wavefunction):
     for var in trainable_variables:
         print(f"Variable Name: {var.name}, Variable Shape: {var.shape}")
 
-    
 def metropolis_hastings_update(x, psi, delta):
     """
     Perform a Metropolis-Hastings update for a set of configurations.
@@ -196,18 +194,21 @@ def metropolis_hastings_update(x, psi, delta):
         tf.Tensor: Updated configurations after Metropolis-Hastings updates, shape (num_samples, dof).
     """
     num_samples, dof = x.shape
- 
-    for i in range(num_samples):
-         proposed_x = x[i] + delta * tf.random.normal((dof,), dtype=tf.float32)
- 
-         psi_current = psi(tf.expand_dims(x[i], 0))
-         psi_proposed = psi(tf.expand_dims(proposed_x, 0))
-         acceptance_prob = tf.minimum(1.0, tf.square(tf.abs(psi_proposed) / tf.abs(psi_current)))
- 
-         if tf.random.uniform(()) < acceptance_prob:
-             x[i].assign(proposed_x)
- 
+    
+    proposed_x = x + delta * tf.random.normal(x.shape, dtype=tf.float32)
+    
+    psi_current = psi(x)
+    psi_proposed = psi(proposed_x)
+    
+    acceptance_prob = tf.minimum(1.0, tf.square(tf.abs(psi_proposed) / tf.abs(psi_current)))
+    random_numbers = tf.random.uniform((num_samples,))
+    accept_mask = random_numbers[:, tf.newaxis] < acceptance_prob
+    
+    x = tf.where(accept_mask, proposed_x, x)
+    
     return x
+
+
 
 def variational_monte_carlo(wavefunction, num_samples, num_iterations, learning_rate, dof, delta, firstrun=True, target_energy=None):
     """
