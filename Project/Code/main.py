@@ -78,10 +78,7 @@ def local_energy(psi, H, x1, x2):
     
     local_energy = tf.reduce_mean(H/ psi_val)
     
-    return local_energy
-
-
-
+    return local_energy  
 
 class NeuralNetwork(tf.Module):
     """
@@ -94,16 +91,18 @@ class NeuralNetwork(tf.Module):
         __call__(x):
             Compute the forward pass of the neural network given input `x`.
     """
-    def __init__(self, l2_regularization=0.05, dropout_rate=0.1):
-        self.layer1 = tf.keras.layers.Dense(256, activation='sigmoid',
+    def __init__(self, l2_regularization=0.1, dropout_rate=0.3):
+        self.layer1 = tf.keras.layers.Dense(512, activation='sigmoid',
                                            kernel_regularizer=tf.keras.regularizers.l2(l2_regularization))
-        self.layer2 = tf.keras.layers.Dense(128, activation='sigmoid',
+        self.layer2 = tf.keras.layers.Dense(256, activation='sigmoid',
                                            kernel_regularizer=tf.keras.regularizers.l2(l2_regularization))
-        self.layer3 = tf.keras.layers.Dense(64, activation='sigmoid',
+        self.layer3 = tf.keras.layers.Dense(128, activation='sigmoid',
                                            kernel_regularizer=tf.keras.regularizers.l2(l2_regularization))
-        self.layer4 = tf.keras.layers.Dense(16, activation='sigmoid',
+        self.layer4 = tf.keras.layers.Dense(32, activation='sigmoid',
                                            kernel_regularizer=tf.keras.regularizers.l2(l2_regularization))
         self.dropout = tf.keras.layers.Dropout(rate=dropout_rate)
+        self.layer5 = tf.keras.layers.Dense(4, activation='tanh',
+                                            kernel_regularizer=tf.keras.regularizers.l2(l2_regularization))
         self.output = tf.keras.layers.Dense(1, activation='tanh')
 
     def __call__(self, x):
@@ -121,8 +120,10 @@ class NeuralNetwork(tf.Module):
         x = self.layer3(x)
         x = self.layer4(x)
         x = self.dropout(x)
+        x = self.layer5(x)
         x = self.output(x)
         return x
+
 
 
 class WaveFunction(tf.Module):
@@ -210,7 +211,8 @@ def metropolis_hastings_update(x, psi, delta):
 
 
 
-def variational_monte_carlo(wavefunction, num_samples, num_iterations, learning_rate, dof, delta, firstrun=True, target_energy=None):
+def variational_monte_carlo(wavefunction, num_samples, num_iterations, learning_rate,
+                            dof, delta, firstrun=True, target_energy=None, verbose=None):
     """
     Perform Variational Monte Carlo (VMC) optimization to find the ground state energy.
 
@@ -257,10 +259,12 @@ def variational_monte_carlo(wavefunction, num_samples, num_iterations, learning_
     
         
         if np.isnan(energy.numpy()).any() or np.isinf(energy.numpy()).any():
-            if firstrun:
+            if firstrun and verbose:
                 print("NaN or inf encountered in configuration. Trying new initial configuration(s)...")
             wavefunction = WaveFunction()
-            return variational_monte_carlo(wavefunction, num_samples, num_iterations, learning_rate, dof, delta, firstrun=False, target_energy=target_energy)
+            return variational_monte_carlo(wavefunction, num_samples, num_iterations,
+                                           learning_rate, dof, delta, firstrun=False,
+                                           target_energy=target_energy, verbose=verbose)
         
         
         updated_learning_rate = initial_learning_rate * (1.0 + 0.1 * energy_difference)
@@ -271,28 +275,42 @@ def variational_monte_carlo(wavefunction, num_samples, num_iterations, learning_
         learning_rate = updated_learning_rate
         
     
-        if iteration % 10 == 0:
+        if iteration % 10 == 0 and verbose:
             print(f"Iteration {int(iteration/10+1)}: Energy = {energy.numpy():.3f} a.u.")
         
         energies.append(energy.numpy())
         
-    plt.plot(energies)
-    plt.plot([target_energy]*len(energies))
-    plt.title('Local energy of an interacting 2 fermion system')
-    plt.legend(['Numerical', 'Analytical'])
-    plt.show()
-    print('Final energy: ', energy.numpy())
+    # plt.plot(energies[::100])
+    # plt.plot([target_energy]*len(energies))
+    # plt.title('Local energy of an interacting 2 fermion system')
+    # plt.legend(['Numerical', 'Analytical'])
+    # plt.xlabel('Iteration')
+    # plt.ylabel('Energy [a.u.]')
+    # plt.show()
+    if verbose:
+        print(f"Final energy for run {k+1}: {energy.numpy():.3f} a.u.")
+    
+    return energy.numpy()
 
 if __name__ == "__main__":
-    num_samples = 200
-    num_iterations = 3000
-    learning_rate = 0.001
+    runs = 1
+    num_samples = 400
+    num_iterations = 1500
+    learning_rate = 0.002
     dof = 2
     delta = 0.005
     target_energy = tf.constant(3.0, dtype=tf.float32)
 
 
-    wavefunction = WaveFunction()
+    energy_storage = []
     
-    variational_monte_carlo(wavefunction, num_samples, num_iterations, learning_rate, dof, delta, target_energy=target_energy)
+    for k in range(runs):
+
+        wavefunction = WaveFunction()
+        
+        energy_storage.append(variational_monte_carlo(wavefunction, num_samples, num_iterations,
+                                                      learning_rate, dof, delta, target_energy=target_energy, verbose=True))
+        
+        
+    print(f"Mean energy over {runs} runs: {np.mean(energy_storage)} a.u.")
     
