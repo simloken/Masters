@@ -92,13 +92,13 @@ class NeuralNetwork(tf.Module):
             Compute the forward pass of the neural network given input `x`.
     """
     def __init__(self, l2_regularization=0.1, dropout_rate=0.3):
-        self.layer1 = tf.keras.layers.Dense(512, activation='sigmoid',
+        self.layer1 = tf.keras.layers.Dense(256, activation='sigmoid',
                                            kernel_regularizer=tf.keras.regularizers.l2(l2_regularization))
-        self.layer2 = tf.keras.layers.Dense(256, activation='sigmoid',
+        self.layer2 = tf.keras.layers.Dense(128, activation='sigmoid',
                                            kernel_regularizer=tf.keras.regularizers.l2(l2_regularization))
-        self.layer3 = tf.keras.layers.Dense(128, activation='sigmoid',
+        self.layer3 = tf.keras.layers.Dense(64, activation='sigmoid',
                                            kernel_regularizer=tf.keras.regularizers.l2(l2_regularization))
-        self.layer4 = tf.keras.layers.Dense(32, activation='sigmoid',
+        self.layer4 = tf.keras.layers.Dense(16, activation='sigmoid',
                                            kernel_regularizer=tf.keras.regularizers.l2(l2_regularization))
         self.dropout = tf.keras.layers.Dropout(rate=dropout_rate)
         self.layer5 = tf.keras.layers.Dense(4, activation='tanh',
@@ -293,7 +293,7 @@ def variational_monte_carlo(wavefunction, num_samples, num_iterations, learning_
     return energy.numpy()
 
 if __name__ == "__main__":
-    runs = 1
+    runs = 10
     num_samples = 400
     num_iterations = 1500
     learning_rate = 0.002
@@ -309,7 +309,7 @@ if __name__ == "__main__":
         wavefunction = WaveFunction()
         
         energy_storage.append(variational_monte_carlo(wavefunction, num_samples, num_iterations,
-                                                      learning_rate, dof, delta, target_energy=target_energy, verbose=True))
+                                                      learning_rate, dof, delta, target_energy=target_energy, verbose=False))
         
         
     print(f"Mean energy over {runs} runs: {np.mean(energy_storage)} a.u.")
