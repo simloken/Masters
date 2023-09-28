@@ -1,8 +1,13 @@
 import numpy as np
 
-#TODO
+import warnings
+import time
 
-#
+#TODO
+#IMPROVE RUNTIMES
+
+#acceptance prob sometimes underflows, has no effect on calculations since underflow = 0
+warnings.filterwarnings("ignore", category=RuntimeWarning, message="overflow encountered")
 
 def hamiltonian(r, omega):
     """
@@ -101,7 +106,7 @@ def metropolis_hastings_update(r, omega, num_samples):
     for _ in range(num_samples):
         proposed_r = current_r + 0.1 * np.random.randn(num_visible)
         proposed_energy = hamiltonian(proposed_r, omega)
-        acceptance_prob = np.exp(-min(0, proposed_energy - current_energy))
+        acceptance_prob = np.exp(proposed_energy - current_energy)
 
         if np.random.rand() < acceptance_prob:
             current_r = proposed_r
@@ -121,37 +126,46 @@ def variational_monte_carlo(rbm, num_samples, num_iterations):
         num_iterations (int): Number of iterations.
     """
     learning_rate = 0.01
+    rbm_params = [rbm.W, rbm.a, rbm.b]
 
     for _ in range(num_iterations):
-        samples = metropolis_hastings_update(rbm.W.flatten(), omega, num_samples)
+        samples = metropolis_hastings_update(rbm_params, omega, num_samples)
 
         gradient = np.mean([hamiltonian(sample, omega) for sample in samples])
-        
-        rbm.W += learning_rate * gradient * rbm.W
-        rbm.a += learning_rate * gradient * rbm.a
-        rbm.b += learning_rate * gradient * rbm.b
+
+        for param in rbm_params:
+            param += learning_rate * gradient * param
         
 
 if __name__ == "__main__":
+    t0 = time.time()
+    runs = 1
     omega = 1.0
     num_particles = 2  
     dof = 2
     num_visible = num_particles * dof
-    num_hidden=3
-    num_samples = 1000
+    num_hidden=6
+    num_samples = 2000
     num_iterations = 1000
+    energy_storage = []
+    verbose = False
     
-
-    r = np.random.randn(num_visible)
-    rbm = RBM(num_visible, num_hidden)
+    for k in range(runs):
+        r = np.random.randn(num_visible)
+        rbm = RBM(num_visible, num_hidden)
+        
+        variational_monte_carlo(rbm, num_samples, num_iterations) 
     
-    variational_monte_carlo(rbm, num_samples, num_iterations) 
+        ground_state_energy = []
+        for _ in range(num_samples):
+            sample = np.random.randn(num_visible)
+            local_energy = hamiltonian(sample, omega)
+            ground_state_energy.append(local_energy)
+    
+        estimated_energy = np.mean(ground_state_energy)
+        if verbose:
+            print(f"Energy: {estimated_energy:.3f} a.u.")
+        energy_storage.append(estimated_energy)
+    print(f"Mean energy over {runs} runs: {np.mean(energy_storage)} a.u.")
+    print(f"Total run time: {(time.time() - t0):.2f}s\nAverage run time: {((time.time() - t0)/runs):.2f}s")
 
-    ground_state_energy = []
-    for _ in range(num_samples):
-        sample = np.random.randn(num_visible)
-        local_energy = hamiltonian(sample, omega)
-        ground_state_energy.append(local_energy)
-
-    estimated_energy = np.mean(ground_state_energy)
-    print(f"Energy: {estimated_energy:.3f} a.u.")
