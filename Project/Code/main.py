@@ -2,6 +2,8 @@ import tensorflow as tf
 import numpy as np
 import matplotlib.pyplot as plt
 
+import time
+
 
 #TODO
 #PARTICLE OBJECTS FOR SCALABILITY + TYPES ETC. obj(boson/fermion)
@@ -15,7 +17,7 @@ else:
     print("Using CPU")
     
 
-def hamiltonian(psi, x1, x2, omega=1, normalize=False):
+def hamiltonian(psi, x1, x2, omega=1):
     """
     Calculate the Hamiltonian operator for two interacting fermions (electrons).
 
@@ -24,10 +26,9 @@ def hamiltonian(psi, x1, x2, omega=1, normalize=False):
         x1 (tf.Tensor): Positional tensor for electron 1 with shape (N, M).
         x2 (tf.Tensor): Positional tensor for electron 2 with shape (N, M).
         omega (float): The harmonic oscillator frequency.
-        normalize (bool): Whether or not to normalize psi
 
     Returns:
-        tf.Tensor: The Hamiltonian operator applied to psi.
+        tf.Tensor: The Hamiltonian operator.
     """
     N, M = x1.shape
 
@@ -210,7 +211,6 @@ def metropolis_hastings_update(x, psi, delta):
     return x
 
 
-
 def variational_monte_carlo(wavefunction, num_samples, num_iterations, learning_rate,
                             dof, delta, firstrun=True, target_energy=None, verbose=None):
     """
@@ -225,6 +225,7 @@ def variational_monte_carlo(wavefunction, num_samples, num_iterations, learning_
         delta (float): The Metropolis-Hastings step size.
         firstrun (bool): Flag to indicate if this is the first run (for handling NaN/inf values).
         target_energy (float): The target energy (if known).
+        verbose (bool): Whether or not to print progress.
 
     Returns:
         None
@@ -252,10 +253,9 @@ def variational_monte_carlo(wavefunction, num_samples, num_iterations, learning_
 
         energy = local_energy(wavefunction, energy, x1, x2)
         
-        if target_energy:
+        energy_difference = 0
+        if target_energy is not None:
             energy_difference = abs(target_energy - energy)
-        else:
-            energy_difference = 0
     
         
         if np.isnan(energy.numpy()).any() or np.isinf(energy.numpy()).any():
@@ -293,24 +293,28 @@ def variational_monte_carlo(wavefunction, num_samples, num_iterations, learning_
     return energy.numpy()
 
 if __name__ == "__main__":
-    runs = 10
+    runs = 20
     num_samples = 400
     num_iterations = 1500
     learning_rate = 0.002
     dof = 2
     delta = 0.005
     target_energy = tf.constant(3.0, dtype=tf.float32)
+    verbose = False
 
 
     energy_storage = []
-    
+    t0 = time.time()
     for k in range(runs):
-
+        
+        trun = time.time()
         wavefunction = WaveFunction()
         
         energy_storage.append(variational_monte_carlo(wavefunction, num_samples, num_iterations,
-                                                      learning_rate, dof, delta, target_energy=target_energy, verbose=False))
-        
+                                                      learning_rate, dof, delta, target_energy=target_energy, verbose=verbose))
+        if verbose:
+            print(f"Run #{k+1} time: {(time.time() - trun):.2f}s")
         
     print(f"Mean energy over {runs} runs: {np.mean(energy_storage)} a.u.")
+    print(f"Total run time: {(time.time() - t0):.2f}s\nAverage run time: {((time.time() - t0)/runs):.2f}s")
     
