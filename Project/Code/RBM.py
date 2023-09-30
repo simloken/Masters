@@ -1,36 +1,14 @@
 import numpy as np
 
-import warnings
 import time
+import warnings
+
 
 #TODO
 #IMPROVE RUNTIMES
 
 #acceptance prob sometimes underflows, has no effect on calculations since underflow = 0
 warnings.filterwarnings("ignore", category=RuntimeWarning, message="overflow encountered")
-
-def hamiltonian(r, omega):
-    """
-    Calculate the Hamiltonian of a quantum system.
-
-    Args:
-        r (np.ndarray): The positions of particles in the system.
-        omega (float): The harmonic oscillator frequency.
-
-    Returns:
-        float: The Hamiltonian Operator
-    """
-    N = len(r) // dof
-    
-    kinetic_energy = -0.5 * np.sum(np.gradient(np.gradient(r)))
-    potential_energy =  0.5 * omega**2 * np.sum(r**2)
-    
-    interaction_energy = 0
-    for i in range(N):
-        for j in range(i + 1, N):
-            interaction_energy += 1.0 / np.linalg.norm(r[i*dof:(i+1)*dof] - r[j*dof:(j+1)*dof])
-    
-    return kinetic_energy + potential_energy + interaction_energy
 
 class RBM:
     """
@@ -87,7 +65,7 @@ class RBM:
         v = np.random.binomial(1, p_v_given_h)
         return v
 
-def metropolis_hastings_update(r, omega, num_samples):
+def metropolis_hastings_update(hamiltonian, r, omega, num_samples, num_visible, dof):
     """
     Perform Metropolis-Hastings updates to generate samples.
 
@@ -101,11 +79,11 @@ def metropolis_hastings_update(r, omega, num_samples):
     """
     samples = []
     current_r = np.random.randn(num_visible)
-    current_energy = hamiltonian(current_r, omega)
+    current_energy = hamiltonian(current_r, omega, dof)
 
     for _ in range(num_samples):
         proposed_r = current_r + 0.1 * np.random.randn(num_visible)
-        proposed_energy = hamiltonian(proposed_r, omega)
+        proposed_energy = hamiltonian(proposed_r, omega, dof)
         acceptance_prob = np.exp(proposed_energy - current_energy)
 
         if np.random.rand() < acceptance_prob:
@@ -116,56 +94,27 @@ def metropolis_hastings_update(r, omega, num_samples):
 
     return np.array(samples)
 
-def variational_monte_carlo(rbm, num_samples, num_iterations):
+def variational_monte_carlo(hamiltonian, rbm, num_visible, num_samples, num_iterations, omega, dof):
     """
     Perform Variational Monte Carlo (VMC) optimization to find the ground state energy.
 
     Args:
+        hamiltonian (function): The hamiltonian of the model
         rbm (RBM): Restricted Boltzmann Machine model.
+        num_visible (int): The number of visible units in the RBM model, num_particles x dof
         num_samples (int): Number of Metropolis-Hastings samples per iteration.
         num_iterations (int): Number of iterations.
+        omega (float): The harmonic oscillator frequency
+        dof (int): The degrees of freedom of the system
     """
-    learning_rate = 0.01
+    learning_rate = 0.05
     rbm_params = [rbm.W, rbm.a, rbm.b]
 
     for _ in range(num_iterations):
-        samples = metropolis_hastings_update(rbm_params, omega, num_samples)
+        samples = metropolis_hastings_update(hamiltonian, rbm_params, num_visible, omega, num_samples, dof)
 
-        gradient = np.mean([hamiltonian(sample, omega) for sample in samples])
+        gradient = np.mean([hamiltonian(sample, omega, dof) for sample in samples])
 
         for param in rbm_params:
             param += learning_rate * gradient * param
         
-
-if __name__ == "__main__":
-    t0 = time.time()
-    runs = 1
-    omega = 1.0
-    num_particles = 2  
-    dof = 2
-    num_visible = num_particles * dof
-    num_hidden=6
-    num_samples = 2000
-    num_iterations = 1000
-    energy_storage = []
-    verbose = False
-    
-    for k in range(runs):
-        r = np.random.randn(num_visible)
-        rbm = RBM(num_visible, num_hidden)
-        
-        variational_monte_carlo(rbm, num_samples, num_iterations) 
-    
-        ground_state_energy = []
-        for _ in range(num_samples):
-            sample = np.random.randn(num_visible)
-            local_energy = hamiltonian(sample, omega)
-            ground_state_energy.append(local_energy)
-    
-        estimated_energy = np.mean(ground_state_energy)
-        if verbose:
-            print(f"Energy: {estimated_energy:.3f} a.u.")
-        energy_storage.append(estimated_energy)
-    print(f"Mean energy over {runs} runs: {np.mean(energy_storage)} a.u.")
-    print(f"Total run time: {(time.time() - t0):.2f}s\nAverage run time: {((time.time() - t0)/runs):.2f}s")
-
