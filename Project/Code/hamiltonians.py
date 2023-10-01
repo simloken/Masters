@@ -10,7 +10,7 @@ class NN:
             psi (callable): A TensorFlow neural network estimating the wavefunction.
             x1 (tf.Tensor): Positional tensor for electron 1 with shape (N, M).
             x2 (tf.Tensor): Positional tensor for electron 2 with shape (N, M).
-            omega (float): The harmonic oscillator frequency.
+            omega (float, optional): The harmonic oscillator frequency.
 
         Returns:
             tf.Tensor: The Hamiltonian operator.
@@ -51,7 +51,7 @@ class NN:
 class RBM:
     def two_fermions(r, omega, dof):
         """
-        Calculate the Hamiltonian of a quantum system.
+        Calculate the Hamiltonian operator for two interacting fermions (electrons).
 
         Args:
             r (np.ndarray): The positions of particles in the system.
@@ -67,8 +67,10 @@ class RBM:
         potential_energy =  0.5 * omega**2 * np.sum(r**2)
         
         interaction_energy = 0
-        for i in range(N):
-            for j in range(i + 1, N):
-                interaction_energy += 1.0 / np.linalg.norm(r[i*dof:(i+1)*dof] - r[j*dof:(j+1)*dof])
+
+        r_reshaped = r.reshape(N, dof)
+        delta_r = r_reshaped[:, np.newaxis, :] - r_reshaped[np.newaxis, :, :]
+        distances = np.linalg.norm(delta_r, axis=2)
+        interaction_energy = np.sum(1.0 / distances[np.triu_indices(N, k=1)])
         
         return kinetic_energy + potential_energy + interaction_energy

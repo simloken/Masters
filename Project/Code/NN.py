@@ -3,14 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 import time
-
-if tf.config.experimental.list_physical_devices("GPU"):
-    print("Using GPU")
-    tf.config.experimental.set_memory_growth(tf.config.experimental.list_physical_devices("GPU")[0], True)
-else:
-    print("Using CPU")
     
-
 def local_energy(psi, H, x1, x2):
     """
     Calculate the local energy for the ground state.
@@ -181,6 +174,14 @@ def variational_monte_carlo(wavefunction, hamiltonian, num_samples, num_iteratio
         energy (float): The final ground state energy of the system
     """
 
+
+    
+    if tf.config.experimental.list_physical_devices("GPU"):
+        print("Using GPU")
+        tf.config.experimental.set_memory_growth(tf.config.experimental.list_physical_devices("GPU")[0], True)
+    else:
+        print("Using CPU")
+        
     optimizer = tf.optimizers.Adam(learning_rate)
     
     x1 = tf.Variable(tf.random.normal((num_samples, dof), dtype=tf.float32), trainable=True)
