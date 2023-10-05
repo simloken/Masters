@@ -1,11 +1,6 @@
 import numpy as np
 
-import time
 import warnings
-
-
-#TODO
-#IMPROVE RUNTIMES
 
 #acceptance prob sometimes underflows, has no effect on calculations since underflow = 0
 warnings.filterwarnings("ignore", category=RuntimeWarning, message="overflow encountered")
@@ -21,7 +16,7 @@ class RBM:
     def __init__(self, num_visible, num_hidden):
         self.num_visible = num_visible
         self.num_hidden = num_hidden
-        self.W = np.random.randn(num_visible, num_hidden)
+        self.W = 0.01 * np.random.randn(num_visible, num_hidden)
         self.a = np.zeros(num_visible)
         self.b = np.zeros(num_hidden)
 
@@ -64,6 +59,34 @@ class RBM:
         p_v_given_h = self.sigmoid(np.dot(h, self.W.T) + self.a)
         v = np.random.binomial(1, p_v_given_h)
         return v
+    
+    def persistent_contrastive_divergence(self, v0, learning_rate, k=100):
+        """
+        Perform one step of Persistent Contrastive Divergence (PCD) learning.
+
+        Args:
+            v0 (np.ndarray): Input data for contrastive divergence.
+            learning_rate (float): Learning rate for weight updates.
+            k (int): Number of Gibbs sampling steps for CD.
+
+        Returns:
+            None
+        """
+        ph0 = self.sigmoid(np.dot(v0, self.W) + self.b)
+        h0 = np.random.binomial(1, ph0) #unused
+
+        vk = v0.copy()
+        for _ in range(k):
+            phk = self.sigmoid(np.dot(vk, self.W) + self.b)
+            hk = np.random.binomial(1, phk)
+            pvk = self.sigmoid(np.dot(hk, self.W.T) + self.a)
+            vk = np.random.binomial(1, pvk)
+
+        self.W += learning_rate * (np.outer(v0, ph0) - np.outer(vk, phk))
+        self.a += learning_rate * (v0 - vk)
+        self.b += learning_rate * (ph0 - phk)
+
+
 
 def metropolis_hastings_update(hamiltonian, r, omega, num_samples, num_visible, dof):
     """
@@ -110,11 +133,14 @@ def variational_monte_carlo(hamiltonian, rbm, num_visible, num_samples, num_iter
     learning_rate = 0.05
     rbm_params = [rbm.W, rbm.a, rbm.b]
 
+    persistent_chains = [np.random.binomial(1, 0.5, num_visible) for _ in range(num_samples)]
+
     for _ in range(num_iterations):
-        samples = metropolis_hastings_update(hamiltonian, rbm_params, num_visible, omega, num_samples, dof)
+        samples = metropolis_hastings_update(hamiltonian, rbm_params, omega, num_samples, num_visible, dof)
 
-        gradient = np.mean([hamiltonian(sample, omega, dof) for sample in samples])
+        gradient = np.mean([np.gradient(sample) for sample in samples], axis=0)
 
-        for param in rbm_params:
-            param += learning_rate * gradient * param
+        for param, grad, persistent_chain in zip(rbm_params, gradient, persistent_chains):
+            rbm.persistent_contrastive_divergence(persistent_chain, learning_rate=learning_rate)
+            persistent_chain[:] = rbm.backward(rbm.forward(persistent_chain))
         

@@ -2,10 +2,10 @@ import numpy as np
 
 import time
 
+from NN import WaveFunction
 from RBM import RBM
 from NN import variational_monte_carlo as VMCNN
 from RBM import variational_monte_carlo as VMCRBM
-from NN import WaveFunction
 
 def run_neural_network_model(hamiltonian, num_particles, num_samples, num_iterations,
                              runs, dof, target_energy=None, verbose=False):

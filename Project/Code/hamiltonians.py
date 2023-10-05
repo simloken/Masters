@@ -74,3 +74,26 @@ class RBM:
         interaction_energy = np.sum(1.0 / distances[np.triu_indices(N, k=1)])
         
         return kinetic_energy + potential_energy + interaction_energy
+    
+    def calogero_sutherland(r, beta, dof=1):
+        """
+        Calculate the Hamiltonian for the Calogero-Sutherland model.
+         
+        Args:
+            r (np.ndarray) The positions of particles in the system.
+            beta (float): Interaction parameter
+            dof (int): The degrees of freedom of the system. Should always be 1.
+         
+        Returns:
+            float: The Hamiltonian operator
+        """
+        N = len(r)
+        x0 = 0.5
+        kinetic_energy = -0.5 * np.sum(np.diff(r, 2)**2)
+        potential_energy = 0.5 * np.sum(r**2)
+        
+        distances = np.abs(r[:, None] - r[None, :])
+        np.fill_diagonal(distances, 1.0)
+        interaction_energy = np.sum((beta * (beta - 1)) * (np.tanh(distances / x0)**2) / distances**2)
+        
+        return kinetic_energy + potential_energy + interaction_energy
