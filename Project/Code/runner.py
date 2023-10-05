@@ -1,4 +1,5 @@
 import numpy as np
+import tensorflow as tf
 
 import time
 
@@ -27,6 +28,12 @@ def run_neural_network_model(hamiltonian, num_particles, num_samples, num_iterat
 
     """
     
+    if tf.config.experimental.list_physical_devices("GPU"):
+        print("Using GPU")
+        tf.config.experimental.set_memory_growth(tf.config.experimental.list_physical_devices("GPU")[0], True)
+    else:
+        print("Using CPU")
+    
     delta = 0.005
     learning_rate = 0.002
 
@@ -37,7 +44,7 @@ def run_neural_network_model(hamiltonian, num_particles, num_samples, num_iterat
         trun = time.time()
         wavefunction = WaveFunction()
         
-        energy_storage.append(VMCNN(wavefunction, hamiltonian, num_samples, num_iterations,
+        energy_storage.append(VMCNN(wavefunction, hamiltonian, num_particles, num_samples, num_iterations,
                                                       learning_rate, dof, delta, target_energy=target_energy, verbose=verbose))
         if verbose:
             print(f"Run #{k+1} time: {(time.time() - trun):.2f}s")

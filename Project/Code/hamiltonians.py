@@ -2,19 +2,21 @@ import tensorflow as tf
 import numpy as np
 
 class NN:
-    def two_fermions(psi, x1, x2, omega=1):
+    def two_fermions(psi, positions, omega=1):
         """
         Calculate the Hamiltonian operator for two interacting fermions (electrons).
 
         Args:
             psi (callable): A TensorFlow neural network estimating the wavefunction.
-            x1 (tf.Tensor): Positional tensor for electron 1 with shape (N, M).
-            x2 (tf.Tensor): Positional tensor for electron 2 with shape (N, M).
+            positions (list of tf.Tensor): List of positional tensors for each particle.
             omega (float, optional): The harmonic oscillator frequency.
 
         Returns:
             tf.Tensor: The Hamiltonian operator.
         """
+        x1 = positions[0]
+        x2 = positions[1]
+        
         N, M = x1.shape
 
         with tf.GradientTape(persistent=True) as tape:
@@ -46,6 +48,46 @@ class NN:
         # print('I: ', np.mean(interaction_energy))
 
         return hamiltonian_operator
+    
+    
+    def calogero_sutherland(psi, positions, omega=1):
+        """
+        Calculate the Hamiltonian operator for the Calogero-Sutherland model.
+    
+        Args:
+            psi (callable): A TensorFlow neural network estimating the wavefunction.
+            positions (list of tf.Tensor): List of positional tensors for each particle.
+            omega (float, optional): The harmonic oscillator frequency.
+            beta (float, optional): Interaction parameter.
+    
+        Returns:
+            tf.Tensor: The Hamiltonian operator.
+        """
+        N = len(positions)
+        beta = 2
+        x_0 = 0.4
+    
+        with tf.GradientTape(persistent=True) as tape:
+            tape.watch(positions)
+            psi_values = [psi(p) for p in positions]
+
+        kinetic_terms = [-0.5 * tf.reduce_sum(tf.square(tape.gradient(psi_i, p)), axis=1) for psi_i, p in zip(psi_values, positions)]
+        potential_terms = [0.5 * omega**2 * tf.reduce_sum(tf.square(p), axis=1) for p in positions]
+    
+        interaction_energy = 0.0
+        for i in range(N):
+            for j in range(i + 1, N):
+                r_ij = tf.norm(positions[i] - positions[j], axis=1)
+                modified_potential = tf.square(tf.nn.tanh(r_ij / x_0)) / tf.square(r_ij)
+                interaction_energy += (beta * (beta - 1)) * modified_potential
+    
+        hamiltonian_operator = sum(kinetic_terms) + sum(potential_terms) + interaction_energy
+        
+        # print(np.mean(hamiltonian_operator))
+        
+        return hamiltonian_operator
+    
+    
     
     
 class RBM:
@@ -87,13 +129,17 @@ class RBM:
         Returns:
             float: The Hamiltonian operator
         """
-        N = len(r)
-        x0 = 0.5
-        kinetic_energy = -0.5 * np.sum(np.diff(r, 2)**2)
-        potential_energy = 0.5 * np.sum(r**2)
+        x_0 = 0.5
+        beta = 2
+        r_ij = np.abs(np.subtract.outer(r, r))
         
-        distances = np.abs(r[:, None] - r[None, :])
-        np.fill_diagonal(distances, 1.0)
-        interaction_energy = np.sum((beta * (beta - 1)) * (np.tanh(distances / x0)**2) / distances**2)
+        r_ij = r_ij + 1e-8*np.identity(len(r))
         
-        return kinetic_energy + potential_energy + interaction_energy
+        regularization = np.tanh(r_ij / x_0) ** 2 / r_ij
+        
+        kinetic_energy = -0.5 * np.sum(np.gradient(np.gradient(r)))
+        potential_energy = 0.5 * np.sum(r**2) + beta * (beta - 1) * np.sum(regularization)
+        
+        total_energy = kinetic_energy + potential_energy
+        
+        return total_energy

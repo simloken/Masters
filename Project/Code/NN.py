@@ -1,25 +1,24 @@
 import tensorflow as tf
 import numpy as np
-import matplotlib.pyplot as plt
     
-def local_energy(psi, H, x1, x2):
+def local_energy(psi, H, positions):
     """
     Calculate the local energy for the ground state.
 
     Args:
         psi (callable): A TensorFlow neural network estimating the wavefunction.
-        H (tf.tensor): The hamiltonian operator of the wavefunction
-        x1 (tf.Tensor): Positional tensor for electron 1 with shape (N, M).
-        x2 (tf.Tensor): Positional tensor for electron 2 with shape (N, M).
+        H (tf.Tensor): The hamiltonian operator of the wavefunction.
+        positions (list of tf.Tensor): List of positional tensors for each particle.
 
     Returns:
         tf.Tensor: The local energy for the ground state.
-    """    
-    psi_val = psi(x1) * psi(x2)
-    
-    local_energy = tf.reduce_mean(H/ psi_val)
-    
-    return local_energy  
+    """
+    psi_vals = [psi(x) for x in positions]
+    psi_product = tf.reduce_prod(psi_vals, axis=0)
+
+    local_energy = tf.reduce_mean(H / psi_product)
+
+    return local_energy
 
 class NeuralNetwork(tf.Module):
     """
@@ -151,14 +150,15 @@ def metropolis_hastings_update(x, psi, delta):
     return x
 
 
-def variational_monte_carlo(wavefunction, hamiltonian, num_samples, num_iterations, learning_rate,
-                            dof, delta, firstrun=True, target_energy=None, verbose=None):
+def variational_monte_carlo(wavefunction, hamiltonian, num_particles, num_samples, num_iterations, 
+                            learning_rate, dof, delta, firstrun=True, target_energy=None, verbose=None):
     """
     Perform Variational Monte Carlo (VMC) optimization to find the ground state energy.
 
     Args:
         wavefunction (WaveFunction): The wavefunction to optimize.
         hamiltonian (function): The hamiltonian of the system
+        num_particles (int): The number of particles in the system
         num_samples (int): The number of configurations to sample.
         num_iterations (int): The number of VMC iterations.
         learning_rate (float): The initial learning rate for the optimizer.
@@ -171,20 +171,11 @@ def variational_monte_carlo(wavefunction, hamiltonian, num_samples, num_iteratio
     Returns:
         energy (float): The final ground state energy of the system
     """
-
-
-    
-    if tf.config.experimental.list_physical_devices("GPU"):
-        print("Using GPU")
-        tf.config.experimental.set_memory_growth(tf.config.experimental.list_physical_devices("GPU")[0], True)
-    else:
-        print("Using CPU")
         
     optimizer = tf.optimizers.Adam(learning_rate)
     
-    x1 = tf.Variable(tf.random.normal((num_samples, dof), dtype=tf.float32), trainable=True)
-    x2 = tf.Variable(tf.random.normal((num_samples, dof), dtype=tf.float32), trainable=True)
-
+    positions = [tf.Variable(tf.random.normal((num_samples, dof), dtype=tf.float32), trainable=True) 
+                 for _ in range(num_particles)]
 
     initial_learning_rate = learning_rate
     
@@ -192,16 +183,16 @@ def variational_monte_carlo(wavefunction, hamiltonian, num_samples, num_iteratio
     
 
     for iteration in range(num_iterations):
-        x1 = metropolis_hastings_update(x1, wavefunction, delta)
-        x2 = metropolis_hastings_update(x2, wavefunction, delta)
+        for i in range(num_particles):
+            positions[i] = metropolis_hastings_update(positions[i], wavefunction, delta)
 
         with tf.GradientTape(persistent=True) as tape:
-            energy = hamiltonian(wavefunction, x1, x2)
+            energy = hamiltonian(wavefunction, positions)
             
             
         gradients = tape.gradient(energy, wavefunction.get_trainable_variables())
 
-        energy = local_energy(wavefunction, energy, x1, x2)
+        energy = local_energy(wavefunction, energy, positions)
         
         energy_difference = 0
         if target_energy is not None:
@@ -212,7 +203,8 @@ def variational_monte_carlo(wavefunction, hamiltonian, num_samples, num_iteratio
             if firstrun and verbose:
                 print("NaN or inf encountered in configuration. Trying new initial configuration(s)...")
             wavefunction = WaveFunction()
-            return variational_monte_carlo(wavefunction, num_samples, num_iterations,
+            return variational_monte_carlo(wavefunction, hamiltonian, num_particles, 
+                                           num_samples, num_iterations,
                                            learning_rate, dof, delta, firstrun=False,
                                            target_energy=target_energy, verbose=verbose)
         
@@ -229,15 +221,5 @@ def variational_monte_carlo(wavefunction, hamiltonian, num_samples, num_iteratio
             print(f"Iteration {int(iteration/10+1)}: Energy = {energy.numpy():.3f} a.u.")
         
         energies.append(energy.numpy())
-        
-    # plt.plot(energies[::100])
-    # plt.plot([target_energy]*len(energies))
-    # plt.title('Local energy of an interacting 2 fermion system')
-    # plt.legend(['Numerical', 'Analytical'])
-    # plt.xlabel('Iteration')
-    # plt.ylabel('Energy [a.u.]')
-    # plt.show()
-    if verbose:
-        print(f"Final energy for run {k+1}: {energy.numpy():.3f} a.u.")
     
     return energy.numpy()

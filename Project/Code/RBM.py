@@ -141,6 +141,6 @@ def variational_monte_carlo(hamiltonian, rbm, num_visible, num_samples, num_iter
         gradient = np.mean([np.gradient(sample) for sample in samples], axis=0)
 
         for param, grad, persistent_chain in zip(rbm_params, gradient, persistent_chains):
-            rbm.persistent_contrastive_divergence(persistent_chain, learning_rate=learning_rate)
+            rbm.persistent_contrastive_divergence(persistent_chain, learning_rate)
             persistent_chain[:] = rbm.backward(rbm.forward(persistent_chain))
         
