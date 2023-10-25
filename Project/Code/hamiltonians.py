@@ -1,16 +1,33 @@
 import tensorflow as tf
 import numpy as np
+from energies import Energies
 
 class NN:
-    def two_fermions(psi, positions, omega=1):
+    def __init__(self, hamiltonian, params):
+        self.hamiltonian = hamiltonian
+        self.params = params
+        self.first_pass = True
+        
+        accepted_hamiltonians = ['two_fermions', 'calogero_sutherland']
+        
+        if hamiltonian not in accepted_hamiltonians:
+            raise ValueError('Unrecognized Hamiltonian, try: \n', accepted_hamiltonians)
+        
+        if hamiltonian == 'two_fermions':
+            self.hamiltonian = self.two_fermions
+        elif hamiltonian == 'calogero_sutherland':
+            self.hamiltonian = self.calogero_sutherland
+            self.x_0 = 0.5
+        
+        
+    def two_fermions(self, psi, positions):
         """
         Calculate the Hamiltonian operator for two interacting fermions (electrons).
 
         Args:
             psi (callable): A TensorFlow neural network estimating the wavefunction.
             positions (list of tf.Tensor): List of positional tensors for each particle.
-            omega (float, optional): The harmonic oscillator frequency.
-
+            
         Returns:
             tf.Tensor: The Hamiltonian operator.
         """
@@ -18,6 +35,8 @@ class NN:
         x2 = positions[1]
         
         N, M = x1.shape
+        
+        omega = self.params
 
         with tf.GradientTape(persistent=True) as tape:
             tape.watch(x1)
@@ -46,26 +65,32 @@ class NN:
         # print('T: ', np.mean(kinetic_energy_1 + kinetic_energy_2))
         # print('V: ', np.mean(potential_energy_1 + potential_energy_2))
         # print('I: ', np.mean(interaction_energy))
-
+        
+        
+        if self.first_pass:
+            self.energy = Energies.two_fermions()
+            self.first_pass = False
+        
         return hamiltonian_operator
     
     
-    def calogero_sutherland(psi, positions, omega=1):
+    def calogero_sutherland(self, psi, positions):
         """
         Calculate the Hamiltonian operator for the Calogero-Sutherland model.
     
         Args:
             psi (callable): A TensorFlow neural network estimating the wavefunction.
             positions (list of tf.Tensor): List of positional tensors for each particle.
-            omega (float, optional): The harmonic oscillator frequency.
-            beta (float, optional): Interaction parameter.
     
         Returns:
             tf.Tensor: The Hamiltonian operator.
         """
         N = len(positions)
-        beta = 2
-        x_0 = 0.4
+        
+        omega = self.params[0]
+        beta = self.params[1]
+        
+        x_0 = self.x_0
     
         with tf.GradientTape(persistent=True) as tape:
             tape.watch(positions)
@@ -80,10 +105,16 @@ class NN:
                 r_ij = tf.norm(positions[i] - positions[j], axis=1)
                 modified_potential = tf.square(tf.nn.tanh(r_ij / x_0)) / tf.square(r_ij)
                 interaction_energy += (beta * (beta - 1)) * modified_potential
-    
+                
         hamiltonian_operator = sum(kinetic_terms) + sum(potential_terms) + interaction_energy
+              
+        # print('T: ', np.mean(sum(kinetic_terms)))
+        # print('V: ', np.mean(sum(potential_terms)))
+        # print('I: ', np.mean(interaction_energy))
         
-        # print(np.mean(hamiltonian_operator))
+        if self.first_pass:
+            self.energy = Energies.calogero_sutherland(N, omega, beta)
+            self.first_pass = False
         
         return hamiltonian_operator
     
@@ -91,7 +122,23 @@ class NN:
     
     
 class RBM:
-    def two_fermions(r, omega, dof):
+    def __init__(self, hamiltonian, params):
+        self.hamiltonian = hamiltonian
+        self.params = params
+        self.first_pass = True
+        
+        accepted_hamiltonians = ['two_fermions', 'calogero_sutherland']
+        
+        if hamiltonian not in accepted_hamiltonians:
+            raise ValueError('Unrecognized Hamiltonian, try: \n', accepted_hamiltonians)
+        
+        if hamiltonian == 'two_fermions':
+            self.hamiltonian = self.two_fermions
+        elif hamiltonian == 'calogero_sutherland':
+            self.hamiltonian = self.calogero_sutherland
+            self.x_0 = 0.5
+            
+    def two_fermions(self, r, dof):
         """
         Calculate the Hamiltonian operator for two interacting fermions (electrons).
 
@@ -105,6 +152,8 @@ class RBM:
         """
         N = len(r) // dof
         
+        omega = self.params
+        
         kinetic_energy = -0.5 * np.sum(np.gradient(np.gradient(r)))
         potential_energy =  0.5 * omega**2 * np.sum(r**2)
         
@@ -115,9 +164,13 @@ class RBM:
         distances = np.linalg.norm(delta_r, axis=2)
         interaction_energy = np.sum(1.0 / distances[np.triu_indices(N, k=1)])
         
+        if self.first_pass:
+            self.energy = Energies.two_fermions()
+            self.first_pass = False
+        
         return kinetic_energy + potential_energy + interaction_energy
     
-    def calogero_sutherland(r, beta, dof=1):
+    def calogero_sutherland(self, r, dof):
         """
         Calculate the Hamiltonian for the Calogero-Sutherland model.
          
@@ -129,8 +182,12 @@ class RBM:
         Returns:
             float: The Hamiltonian operator
         """
-        x_0 = 0.5
-        beta = 2
+        
+        omega = self.params[0]
+        beta = self.params[1]
+        
+        x_0 = self.x_0
+        
         r_ij = np.abs(np.subtract.outer(r, r))
         
         r_ij = r_ij + 1e-8*np.identity(len(r))
@@ -138,8 +195,12 @@ class RBM:
         regularization = np.tanh(r_ij / x_0) ** 2 / r_ij
         
         kinetic_energy = -0.5 * np.sum(np.gradient(np.gradient(r)))
-        potential_energy = 0.5 * np.sum(r**2) + beta * (beta - 1) * np.sum(regularization)
+        potential_energy = 0.5 * omega * np.sum(r**2) + beta * (beta - 1) * np.sum(regularization)
         
         total_energy = kinetic_energy + potential_energy
+        
+        if self.first_pass:
+            self.energy = Energies.calogero_sutherland(len(r), omega, beta)
+            self.first_pass = False
         
         return total_energy

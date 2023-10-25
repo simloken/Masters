@@ -19,6 +19,7 @@ class RBM:
         self.W = 0.01 * np.random.randn(num_visible, num_hidden)
         self.a = np.zeros(num_visible)
         self.b = np.zeros(num_hidden)
+        self.energy = None
 
     def sigmoid(self, x):
         """
@@ -88,25 +89,27 @@ class RBM:
 
 
 
-def metropolis_hastings_update(hamiltonian, r, omega, num_samples, num_visible, dof):
+def metropolis_hastings_update(model, r, num_samples, num_visible, dof):
     """
     Perform Metropolis-Hastings updates to generate samples.
 
     Args:
         r (np.ndarray): Initial positions of particles.
-        omega (float): The harmonic oscillator frequency.
         num_samples (int): Number of samples to generate.
+        num_visible (int): The number of visible units
+        dof (int): The degrees of freedom of the system
 
     Returns:
         np.ndarray: Generated samples.
     """
     samples = []
     current_r = np.random.randn(num_visible)
-    current_energy = hamiltonian(current_r, omega, dof)
+    current_energy = model.hamiltonian(current_r, dof)
+    
 
     for _ in range(num_samples):
         proposed_r = current_r + 0.1 * np.random.randn(num_visible)
-        proposed_energy = hamiltonian(proposed_r, omega, dof)
+        proposed_energy = model.hamiltonian(proposed_r, dof)
         acceptance_prob = np.exp(proposed_energy - current_energy)
 
         if np.random.rand() < acceptance_prob:
@@ -117,17 +120,16 @@ def metropolis_hastings_update(hamiltonian, r, omega, num_samples, num_visible, 
 
     return np.array(samples)
 
-def variational_monte_carlo(hamiltonian, rbm, num_visible, num_samples, num_iterations, omega, dof):
+def variational_monte_carlo(model, rbm, num_visible, num_samples, num_iterations, dof):
     """
     Perform Variational Monte Carlo (VMC) optimization to find the ground state energy.
 
     Args:
-        hamiltonian (function): The hamiltonian of the model
+        model (object): The hamiltonian model
         rbm (RBM): Restricted Boltzmann Machine model.
         num_visible (int): The number of visible units in the RBM model, num_particles x dof
         num_samples (int): Number of Metropolis-Hastings samples per iteration.
         num_iterations (int): Number of iterations.
-        omega (float): The harmonic oscillator frequency
         dof (int): The degrees of freedom of the system
     """
     learning_rate = 0.05
@@ -136,7 +138,7 @@ def variational_monte_carlo(hamiltonian, rbm, num_visible, num_samples, num_iter
     persistent_chains = [np.random.binomial(1, 0.5, num_visible) for _ in range(num_samples)]
 
     for _ in range(num_iterations):
-        samples = metropolis_hastings_update(hamiltonian, rbm_params, omega, num_samples, num_visible, dof)
+        samples = metropolis_hastings_update(model, rbm_params, num_samples, num_visible, dof)
 
         gradient = np.mean([np.gradient(sample) for sample in samples], axis=0)
 
@@ -144,3 +146,5 @@ def variational_monte_carlo(hamiltonian, rbm, num_visible, num_samples, num_iter
             rbm.persistent_contrastive_divergence(persistent_chain, learning_rate)
             persistent_chain[:] = rbm.backward(rbm.forward(persistent_chain))
         
+    if not rbm.energy: #true energy
+        rbm.energy = model.energy

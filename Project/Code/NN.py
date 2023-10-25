@@ -1,24 +1,30 @@
 import tensorflow as tf
 import numpy as np
     
-def local_energy(psi, H, positions):
+def loss(wavefunction, model, positions):
     """
-    Calculate the local energy for the ground state.
+    Calculate the loss function for Variational Monte Carlo (VMC) optimization.
+
+    This function computes the loss used during VMC optimization to estimate the ground state energy of a quantum system. The loss is defined as the negative of the energy expectation value, which is the ratio of the Hamiltonian expectation value to the square of the wavefunction magnitude.
 
     Args:
-        psi (callable): A TensorFlow neural network estimating the wavefunction.
-        H (tf.Tensor): The hamiltonian operator of the wavefunction.
+        wavefunction (callable): A TensorFlow neural network estimating the wavefunction.
+        model (object): The Hamiltonian object
         positions (list of tf.Tensor): List of positional tensors for each particle.
 
     Returns:
-        tf.Tensor: The local energy for the ground state.
+        tf.Tensor: The energy loss value to be minimized during VMC optimization.
     """
-    psi_vals = [psi(x) for x in positions]
+    energy = model.hamiltonian(wavefunction, positions)
+    
+    psi_vals = [wavefunction(x) for x in positions]
+    
     psi_product = tf.reduce_prod(psi_vals, axis=0)
+    
+    loss_value = tf.reduce_mean(energy / psi_product)
+    
+    return -loss_value
 
-    local_energy = tf.reduce_mean(H / psi_product)
-
-    return local_energy
 
 class NeuralNetwork(tf.Module):
     """
@@ -31,12 +37,12 @@ class NeuralNetwork(tf.Module):
         __call__(x):
             Compute the forward pass of the neural network given input `x`.
     """
-    def __init__(self, l2_regularization=0.1, dropout_rate=0.3):
+    def __init__(self, l2_regularization=0.15, dropout_rate=0.3):
         self.layer1 = tf.keras.layers.Dense(256, activation='sigmoid',
                                            kernel_regularizer=tf.keras.regularizers.l2(l2_regularization))
         self.layer2 = tf.keras.layers.Dense(128, activation='sigmoid',
                                            kernel_regularizer=tf.keras.regularizers.l2(l2_regularization))
-        self.layer3 = tf.keras.layers.Dense(64, activation='sigmoid',
+        self.layer3 = tf.keras.layers.Dense(128, activation='sigmoid',
                                            kernel_regularizer=tf.keras.regularizers.l2(l2_regularization))
         self.layer4 = tf.keras.layers.Dense(16, activation='sigmoid',
                                            kernel_regularizer=tf.keras.regularizers.l2(l2_regularization))
@@ -150,8 +156,9 @@ def metropolis_hastings_update(x, psi, delta):
     return x
 
 
-def variational_monte_carlo(wavefunction, hamiltonian, num_particles, num_samples, num_iterations, 
-                            learning_rate, dof, delta, firstrun=True, target_energy=None, verbose=None):
+def variational_monte_carlo(wavefunction, hamiltonian, num_particles, num_samples,
+                            num_iterations, learning_rate, dof, delta,
+                            firstrun=True, target_energy=None, verbose=None):
     """
     Perform Variational Monte Carlo (VMC) optimization to find the ground state energy.
 
@@ -175,10 +182,8 @@ def variational_monte_carlo(wavefunction, hamiltonian, num_particles, num_sample
     optimizer = tf.optimizers.Adam(learning_rate)
     
     positions = [tf.Variable(tf.random.normal((num_samples, dof), dtype=tf.float32), trainable=True) 
-                 for _ in range(num_particles)]
-
-    initial_learning_rate = learning_rate
-    
+             for _ in range(num_particles)]
+        
     energies = []
     
 
@@ -187,39 +192,32 @@ def variational_monte_carlo(wavefunction, hamiltonian, num_particles, num_sample
             positions[i] = metropolis_hastings_update(positions[i], wavefunction, delta)
 
         with tf.GradientTape(persistent=True) as tape:
-            energy = hamiltonian(wavefunction, positions)
-            
-            
-        gradients = tape.gradient(energy, wavefunction.get_trainable_variables())
+            loss_value = loss(wavefunction, hamiltonian, positions)
 
-        energy = local_energy(wavefunction, energy, positions)
+        gradients = tape.gradient(loss_value, wavefunction.get_trainable_variables())
         
-        energy_difference = 0
-        if target_energy is not None:
-            energy_difference = abs(target_energy - energy)
-    
-        
-        if np.isnan(energy.numpy()).any() or np.isinf(energy.numpy()).any():
+        if np.isnan(loss_value.numpy()).any() or np.isinf(loss_value.numpy()).any():
             if firstrun and verbose:
                 print("NaN or inf encountered in configuration. Trying new initial configuration(s)...")
             wavefunction = WaveFunction()
             return variational_monte_carlo(wavefunction, hamiltonian, num_particles, 
                                            num_samples, num_iterations,
-                                           learning_rate, dof, delta, firstrun=False,
-                                           target_energy=target_energy, verbose=verbose)
+                                           learning_rate, dof, delta,
+                                           firstrun=False, target_energy=target_energy,
+                                           verbose=verbose)
         
-        
-        updated_learning_rate = initial_learning_rate * (1.0 + 0.1 * energy_difference)
-
 
         optimizer.apply_gradients(zip(gradients, wavefunction.get_trainable_variables()))
         
-        learning_rate = updated_learning_rate
         
-    
         if iteration % 10 == 0 and verbose:
-            print(f"Iteration {int(iteration/10+1)}: Energy = {energy.numpy():.3f} a.u.")
+            print(f"Iteration {int(iteration/10+1)}: Loss = {loss_value.numpy():.3f}")
+
+        energies.append(-loss_value.numpy())
         
-        energies.append(energy.numpy())
+        if len(energies) >= 2 and abs(energies[-1] - energies[-2]) < 1e-7:
+            if verbose:
+                print(f"Convergence reached. Energy difference {abs(energies[-1] - energies[-2]):.6f} is smaller than the threshold.")
+            break
     
-    return energy.numpy()
+    return -loss_value.numpy(), energies, hamiltonian.energy
