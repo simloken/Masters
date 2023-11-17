@@ -38,9 +38,9 @@ class NeuralNetwork(tf.Module):
             Compute the forward pass of the neural network given input `x`.
     """
     def __init__(self, l2_regularization=0.15, dropout_rate=0.3):
-        self.layer1 = tf.keras.layers.Dense(256, activation='sigmoid',
+        self.layer1 = tf.keras.layers.Dense(512, activation='sigmoid',
                                            kernel_regularizer=tf.keras.regularizers.l2(l2_regularization))
-        self.layer2 = tf.keras.layers.Dense(128, activation='sigmoid',
+        self.layer2 = tf.keras.layers.Dense(256, activation='sigmoid',
                                            kernel_regularizer=tf.keras.regularizers.l2(l2_regularization))
         self.layer3 = tf.keras.layers.Dense(128, activation='sigmoid',
                                            kernel_regularizer=tf.keras.regularizers.l2(l2_regularization))
@@ -200,6 +200,8 @@ def variational_monte_carlo(wavefunction, hamiltonian, num_particles, num_sample
             if firstrun and verbose:
                 print("NaN or inf encountered in configuration. Trying new initial configuration(s)...")
             wavefunction = WaveFunction()
+            if hamiltonian.x_0:
+                hamiltonian.x_0 = 0.5
             return variational_monte_carlo(wavefunction, hamiltonian, num_particles, 
                                            num_samples, num_iterations,
                                            learning_rate, dof, delta,
@@ -212,12 +214,16 @@ def variational_monte_carlo(wavefunction, hamiltonian, num_particles, num_sample
         
         if iteration % 10 == 0 and verbose:
             print(f"Iteration {int(iteration/10+1)}: Loss = {loss_value.numpy():.3f}")
+            
+        if hamiltonian.x_0:
+            hamiltonian.x_0 -= 0.0004
 
         energies.append(-loss_value.numpy())
         
-        if len(energies) >= 2 and abs(energies[-1] - energies[-2]) < 1e-7:
-            if verbose:
-                print(f"Convergence reached. Energy difference {abs(energies[-1] - energies[-2]):.6f} is smaller than the threshold.")
-            break
     
-    return -loss_value.numpy(), energies, hamiltonian.energy
+    if hamiltonian.x_0:
+        print(hamiltonian.x_0)
+    
+    positions = tf.concat(positions, axis=1).numpy()
+    
+    return -loss_value.numpy(), hamiltonian.energy, positions

@@ -9,6 +9,7 @@ from NN import WaveFunction
 from RBM import RBM
 from NN import variational_monte_carlo as VMCNN
 from RBM import variational_monte_carlo as VMCRBM
+from analysis import plot_particle_density
 
 def run_neural_network_model(hamiltonian, num_particles, num_samples, num_iterations,
                              runs, dof, target_energy=None, verbose=False):
@@ -45,32 +46,33 @@ def run_neural_network_model(hamiltonian, num_particles, num_samples, num_iterat
 
     energy_storage = []
     t0 = time.time()
-    plt.figure()
     for k in range(runs):
         
         trun = time.time()
         wavefunction = WaveFunction()
         
-        energy, energies, true_energy = VMCNN(wavefunction, hamiltonian, num_particles, num_samples, num_iterations,
+        energy, true_energy, positions = VMCNN(wavefunction, hamiltonian, num_particles, num_samples, num_iterations,
                                                       learning_rate, dof, delta,
                                                       target_energy=target_energy, verbose=verbose)
         energy_storage.append(energy)
         
+        plot_particle_density(positions, dof)
+        plt.show()
+        
+        if hamiltonian.x_0:
+            hamiltonian.x_0 = 0.5
+        
         tf.keras.backend.clear_session()
         gc.collect()
         
-        plt.plot(energies, label=f'run: {k+1}')
         
         
         if verbose:
             print(f"Run #{k+1} time: {(time.time() - trun):.2f}s")
+
     
-    plt.legend()
-    plt.xlabel('Iterations')
-    plt.ylabel('Energy [a.u.]')
-    plt.title(f'Energy evolution over {runs} runs')
-    plt.show()
-                    
+    print((energy - true_energy)/true_energy)   
+                
     print(f"Mean energy over {runs} runs: {np.mean(energy_storage)} a.u.")
     print(f"True energy of system: {true_energy} a.u.")
     print(f"Total run time: {(time.time() - t0):.2f}s\nAverage run time: {((time.time() - t0)/runs):.2f}s")
@@ -103,11 +105,11 @@ def run_restricted_boltzmann_model(model, num_particles, num_samples, num_iterat
     for k in range(runs):
         rbm = RBM(num_visible, num_hidden)
         
-        VMCRBM(model, rbm, num_visible, num_samples, num_iterations, dof) 
+        samples = VMCRBM(model, rbm, num_visible, num_samples, num_iterations, dof)
     
         ground_state_energy = []
-        for _ in range(num_samples):
-            sample = np.random.randn(num_visible)
+        
+        for sample in samples:
             local_energy = model.hamiltonian(sample, dof)
             ground_state_energy.append(local_energy)
     
@@ -117,6 +119,12 @@ def run_restricted_boltzmann_model(model, num_particles, num_samples, num_iterat
         
         
         energy_storage.append(estimated_energy)
+        
+        plot_particle_density(samples, dof)
+        plt.show()
+        
+        if model.x_0:
+            model.x_0 = 0.5
         
     
     print(f"Mean energy over {runs} runs: {np.mean(energy_storage)} a.u.")

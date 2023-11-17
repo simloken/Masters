@@ -7,6 +7,7 @@ class NN:
         self.hamiltonian = hamiltonian
         self.params = params
         self.first_pass = True
+        self.x_0 = False
         
         accepted_hamiltonians = ['two_fermions', 'calogero_sutherland']
         
@@ -15,9 +16,11 @@ class NN:
         
         if hamiltonian == 'two_fermions':
             self.hamiltonian = self.two_fermions
+            self.name = 'two_fermions'
         elif hamiltonian == 'calogero_sutherland':
             self.hamiltonian = self.calogero_sutherland
             self.x_0 = 0.5
+            self.name = 'calogero_sutherland'
         
         
     def two_fermions(self, psi, positions):
@@ -126,6 +129,7 @@ class RBM:
         self.hamiltonian = hamiltonian
         self.params = params
         self.first_pass = True
+        self.x_0 = False
         
         accepted_hamiltonians = ['two_fermions', 'calogero_sutherland']
         
@@ -144,7 +148,6 @@ class RBM:
 
         Args:
             r (np.ndarray): The positions of particles in the system.
-            omega (float): The harmonic oscillator frequency.
             dof (int): The degrees of freedom of the system
 
         Returns:
@@ -176,7 +179,6 @@ class RBM:
          
         Args:
             r (np.ndarray) The positions of particles in the system.
-            beta (float): Interaction parameter
             dof (int): The degrees of freedom of the system. Should always be 1.
          
         Returns:
@@ -187,6 +189,7 @@ class RBM:
         beta = self.params[1]
         
         x_0 = self.x_0
+                      
         
         r_ij = np.abs(np.subtract.outer(r, r))
         

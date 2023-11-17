@@ -5,9 +5,9 @@ class Energies:
         Return the true energy of a two fermion system in two dimensions
         
         Returns:
-            int: 3
+            float: 3
         """
-        return 3
+        return 3.0
 
     def calogero_sutherland(N, omega, beta):
         """
