@@ -56,8 +56,9 @@ def run_neural_network_model(hamiltonian, num_particles, num_samples, num_iterat
                                                       target_energy=target_energy, verbose=verbose)
         energy_storage.append(energy)
         
-        plot_particle_density(positions, dof)
-        plt.show()
+        if hamiltonian.has_plots:
+            plot_particle_density(positions, dof)
+            plt.show()
         
         if hamiltonian.x_0:
             hamiltonian.x_0 = 0.5
@@ -71,7 +72,7 @@ def run_neural_network_model(hamiltonian, num_particles, num_samples, num_iterat
             print(f"Run #{k+1} time: {(time.time() - trun):.2f}s")
 
     
-    print((energy - true_energy)/true_energy)   
+    # print((energy - true_energy)/true_energy)   
                 
     print(f"Mean energy over {runs} runs: {np.mean(energy_storage)} a.u.")
     print(f"True energy of system: {true_energy} a.u.")

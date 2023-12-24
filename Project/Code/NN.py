@@ -155,6 +155,34 @@ def metropolis_hastings_update(x, psi, delta):
     
     return x
 
+def metropolis_hastings_spin_update(spins, psi, delta):
+    """
+    Perform a Metropolis-Hastings update for a set of spin configurations.
+
+    Args:
+        spins (tf.Tensor): The current spin configurations, shape (num_samples, dof).
+        psi (callable): A function that computes the wavefunction for a given configuration.
+        delta (float): The step size for the Metropolis-Hastings update.
+
+    Returns:
+        tf.Tensor: Updated spin configurations after Metropolis-Hastings updates, shape (num_samples, dof).
+    """
+    num_samples, dof = spins.shape
+    
+    proposed_spins = tf.where(tf.random.uniform(spins.shape) > 0.5, 0.5, -0.5)
+    
+    psi_current = psi(spins)
+    psi_proposed = psi(proposed_spins)
+    
+    acceptance_prob = tf.minimum(1.0, tf.square(tf.abs(psi_proposed) / tf.abs(psi_current)))
+    random_numbers = tf.random.uniform((num_samples,))
+    accept_mask = random_numbers[:, tf.newaxis] < acceptance_prob
+    
+    spins = tf.where(accept_mask, proposed_spins, spins)
+    
+    return spins
+
+
 
 def variational_monte_carlo(wavefunction, hamiltonian, num_particles, num_samples,
                             num_iterations, learning_rate, dof, delta,
@@ -181,15 +209,22 @@ def variational_monte_carlo(wavefunction, hamiltonian, num_particles, num_sample
         
     optimizer = tf.optimizers.Adam(learning_rate)
     
-    positions = [tf.Variable(tf.random.normal((num_samples, dof), dtype=tf.float32), trainable=True) 
-             for _ in range(num_particles)]
+    if hamiltonian.spin: #lattice particle spin
+        positions = [tf.Variable(tf.where(tf.random.uniform((num_samples, dof)) > 0.5, 0.5, -0.5), trainable=True) 
+         for _ in range(num_particles)]
+
+    else: #free particles
+        positions = [tf.Variable(tf.random.normal((num_samples, dof), dtype=tf.float32), trainable=True) 
+                 for _ in range(num_particles)]
         
     energies = []
-    
-
+        
     for iteration in range(num_iterations):
         for i in range(num_particles):
-            positions[i] = metropolis_hastings_update(positions[i], wavefunction, delta)
+            if hamiltonian.spin:
+                positions[i] = metropolis_hastings_spin_update(positions[i], wavefunction, delta)
+            else:
+                positions[i] = metropolis_hastings_update(positions[i], wavefunction, delta)
 
         with tf.GradientTape(persistent=True) as tape:
             loss_value = loss(wavefunction, hamiltonian, positions)
@@ -208,9 +243,7 @@ def variational_monte_carlo(wavefunction, hamiltonian, num_particles, num_sample
                                            firstrun=False, target_energy=target_energy,
                                            verbose=verbose)
         
-
         optimizer.apply_gradients(zip(gradients, wavefunction.get_trainable_variables()))
-        
         
         if iteration % 10 == 0 and verbose:
             print(f"Iteration {int(iteration/10+1)}: Loss = {loss_value.numpy():.3f}")

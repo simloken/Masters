@@ -133,7 +133,7 @@ def metropolis_hastings_update(model, rbm, num_samples, num_visible, dof):
 
         samples.append(current_r.copy())
         if model.x_0:
-            model.x_0 -= 0.0000002
+            model.x_0 -= 0.0000004
 
     return np.array(samples)
 
@@ -149,7 +149,7 @@ def variational_monte_carlo(model, rbm, num_visible, num_samples, num_iterations
         num_iterations (int): Number of iterations.
         dof (int): The degrees of freedom of the system
     """
-    learning_rate = 0.025
+    learning_rate = 0.005
     rbm_params = [rbm.W, rbm.a, rbm.b]
 
     persistent_chains = [np.random.binomial(1, 0.5, num_visible) for _ in range(num_samples)]

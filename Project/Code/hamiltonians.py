@@ -9,18 +9,35 @@ class NN:
         self.first_pass = True
         self.x_0 = False
         
-        accepted_hamiltonians = ['two_fermions', 'calogero_sutherland']
+        accepted_hamiltonians = ['two_fermions', 'calogero_sutherland',
+                                 'ising', 'heisenberg']
         
         if hamiltonian not in accepted_hamiltonians:
-            raise ValueError('Unrecognized Hamiltonian, try: \n', accepted_hamiltonians)
+            raise ValueError('Unrecognized Hamiltonian, try: ', accepted_hamiltonians)
         
         if hamiltonian == 'two_fermions':
             self.hamiltonian = self.two_fermions
             self.name = 'two_fermions'
+            self.has_plots = True
+            self.spin = False
         elif hamiltonian == 'calogero_sutherland':
             self.hamiltonian = self.calogero_sutherland
             self.x_0 = 0.5
             self.name = 'calogero_sutherland'
+            self.has_plots = True
+            self.spin = False
+        elif hamiltonian == 'ising':
+            self.hamiltonian = self.ising
+            self.name = 'ising'
+            self.has_plots = False
+            self.spin = True
+        elif hamiltonian == 'heisenberg':
+            self.hamiltonian = self.heisenberg
+            self.name = 'heisenberg'
+            self.has_plots = False
+            self.spin = True
+
+
         
         
     def two_fermions(self, psi, positions):
@@ -34,6 +51,7 @@ class NN:
         Returns:
             tf.Tensor: The Hamiltonian operator.
         """
+                
         x1 = positions[0]
         x2 = positions[1]
         
@@ -90,8 +108,8 @@ class NN:
         """
         N = len(positions)
         
-        omega = self.params[0]
-        beta = self.params[1]
+        
+        omega, beta = self.params
         
         x_0 = self.x_0
     
@@ -120,8 +138,39 @@ class NN:
             self.first_pass = False
         
         return hamiltonian_operator
+        
+    def ising(self, psi, spins):
+        """
+        Calculate the Hamiltonian operator for the 1D Transverse Ising Model.
+
+        Args:
+            psi (callable): A TensorFlow neural network estimating the wavefunction.
+            spins (list of tf.Tensor): List of spin configurations for each particle.
+
+        Returns:
+            tf.Tensor: The Hamiltonian operator.
+        """
+        L = len(spins)
+        Gamma, V = self.params
+        
+        with tf.GradientTape(persistent=True) as tape:
+            tape.watch(spins)
+            psi_values = [psi(spin) for spin in spins]
+
+        sigma_x_terms = [Gamma * tf.reduce_sum(tf.math.real(tape.gradient(psi_i, spin)), axis=1) for psi_i, spin in zip(psi_values, spins)]
+
+        sigma_z_terms = [V * tf.reduce_sum(tf.math.real(tf.math.conj(psi_i) * psi_j), axis=1) for psi_i, psi_j in zip(psi_values[:-1], psi_values[1:])]
+
+        hamiltonian_operator = sum(sigma_x_terms) + sum(sigma_z_terms)
+
+        if self.first_pass:
+            self.energy = Energies.ising(L)
+            self.first_pass = False
+
+        return hamiltonian_operator
     
-    
+    def heisenberg(self, psi, positions):
+        ...
     
     
 class RBM:
@@ -207,3 +256,9 @@ class RBM:
             self.first_pass = False
         
         return total_energy
+    
+    def ising():
+        ...
+        
+    def heisenberg():
+        ...
