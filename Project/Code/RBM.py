@@ -137,6 +137,38 @@ def metropolis_hastings_update(model, rbm, num_samples, num_visible, dof):
 
     return np.array(samples)
 
+
+def metropolis_hastings_spin_update(model, rbm, num_samples, num_visible, dof):
+    """
+    Perform Metropolis-Hastings updates to generate samples with 1/2 spins.
+
+    Args:
+        model (object): Object for passing the Hamiltonian.
+        rbm (object): Object representing the Restricted Boltzmann Machine.
+        num_samples (int): Number of samples to generate.
+        num_visible (int): The number of visible units.
+        dof (int): The degrees of freedom of the system.
+
+    Returns:
+        np.ndarray: Generated samples with 1/2 spins.
+    """
+    samples = []
+    current_spin = np.random.choice([-0.5, 0.5], size=num_visible)
+    current_energy = model.hamiltonian(current_spin, dof) + rbm.rbm_energy(current_spin)
+
+    for _ in range(num_samples):
+        proposed_spin = current_spin + 0.5 * np.random.choice([-1, 1], size=num_visible)
+        proposed_energy = model.hamiltonian(proposed_spin, dof) + rbm.rbm_energy(proposed_spin)
+        acceptance_prob = np.exp(proposed_energy - current_energy)
+
+        if np.random.rand() < acceptance_prob:
+            current_spin = proposed_spin
+            current_energy = proposed_energy
+
+        samples.append(current_spin.copy())
+
+    return np.array(samples)
+
 def variational_monte_carlo(model, rbm, num_visible, num_samples, num_iterations, dof):
     """
     Perform Variational Monte Carlo (VMC) optimization to find the ground state energy.
@@ -155,7 +187,11 @@ def variational_monte_carlo(model, rbm, num_visible, num_samples, num_iterations
     persistent_chains = [np.random.binomial(1, 0.5, num_visible) for _ in range(num_samples)]
 
     for i in range(num_iterations):
-        samples = metropolis_hastings_update(model, rbm, num_samples, num_visible, dof)
+        if model.spin:
+            samples = metropolis_hastings_spin_update(model, rbm, num_samples, num_visible, dof)
+        else:
+            samples = metropolis_hastings_update(model, rbm, num_samples, num_visible, dof)
+
 
         gradient = np.mean([np.gradient(sample) for sample in samples], axis=0)
         

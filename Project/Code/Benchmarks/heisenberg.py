@@ -3,7 +3,7 @@ import netket as nk
 
 
 # Define a 1d chain
-L = 6
+L = 20
 g = nk.graph.Hypercube(length=L, n_dim=1, pbc=True)
 hi = nk.hilbert.Spin(s=0.5, total_sz=0, N=g.n_nodes)
 ha = nk.operator.Heisenberg(hilbert=hi, graph=g)
