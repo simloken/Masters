@@ -1,78 +1,110 @@
-import tensorflow as tf
 import numpy as np
-    
+import torch
+import torch.nn as nn
+
+import itertools
+
 def loss(wavefunction, model, samples):
     """
     Calculate the loss function for Variational Monte Carlo (VMC) optimization.
 
-    This function computes the loss used during VMC optimization to estimate the ground state energy of a quantum system. The loss is defined as the negative of the energy expectation value, which is the ratio of the Hamiltonian expectation value to the square of the wavefunction magnitude.
+    This function computes the loss used during VMC optimization to estimate the ground state energy of a quantum system.
 
     Args:
-        wavefunction (callable): A TensorFlow neural network estimating the wavefunction.
-        model (object): The Hamiltonian object
-        samples (list of tf.Tensor): List of positional tensors for each particle.
+        wavefunction (callable): A PyTorch neural network estimating the wavefunction.
+        model (object): The Hamiltonian object.
+        samples (list of torch.Tensor): List of positional tensors for each particle.
 
     Returns:
-        tf.Tensor: The energy loss value to be minimized during VMC optimization.
+        torch.Tensor: The energy loss value to be minimized during VMC optimization.
     """
-    energy = model.hamiltonian(wavefunction, samples)
     
-    psi_vals = [wavefunction(x) for x in samples]
+    if model.name == 'calogero_sutherland': #must be sorted as they are bosons
+        samples, _ = torch.sort(samples, dim=1)
     
-    psi_product = tf.reduce_prod(psi_vals, axis=0)
+    H_psi = model.hamiltonian(wavefunction, samples)
     
-    loss_value = tf.reduce_mean(energy / psi_product)
+    psi_vals = wavefunction(samples)
+    psi_star_vals = torch.conj(wavefunction(samples))
+    psi_magnitude_squared = torch.sum(psi_vals**2) / len(samples)
     
-    return -loss_value
+    expectation_H = psi_star_vals * H_psi
+    loss_value = torch.mean(expectation_H / psi_magnitude_squared)
+        
+    return loss_value
+
+def normalize(wavefunction, samples, name):
+    """
+    Normalize the wavefunction using Monte Carlo estimation.
+
+    Args:
+        wavefunction (callable): A PyTorch neural network estimating the wavefunction.
+        samples (list of torch.Tensor): List of positional tensors for each particle.
+
+    Returns:
+        callable: The normalized wavefunction.
+    """
+    if name == 'calogero_sutherland':
+        samples, _ = torch.sort(samples, dim=0)
+    
+    psi_vals = wavefunction(samples)
+    psi_magnitude_squared = psi_vals**2
+    
+    integral = torch.mean(psi_magnitude_squared)
+    
+    def normalized_wavefunction(x):
+        if torch.is_complex(x):
+            cintegral = integral.type(torch.complex64)
+            return wavefunction(x) / torch.sqrt(cintegral)
+        else:
+            return wavefunction(x) / torch.sqrt(integral)
+    
+    return normalized_wavefunction
 
 
-class NeuralNetwork(tf.Module):
+class NeuralNetwork(nn.Module):
     """
     A neural network model for variational quantum Monte Carlo (VMC) calculations.
 
     This class defines a feedforward neural network with multiple hidden layers
     for representing the wavefunction in VMC calculations.
-    
-    Methods:
-        __call__(x):
-            Compute the forward pass of the neural network given input `x`.
     """
-    def __init__(self, l2_regularization=0.15, dropout_rate=0.3):
-        self.layer1 = tf.keras.layers.Dense(512, activation='sigmoid',
-                                           kernel_regularizer=tf.keras.regularizers.l2(l2_regularization))
-        self.layer2 = tf.keras.layers.Dense(256, activation='sigmoid',
-                                           kernel_regularizer=tf.keras.regularizers.l2(l2_regularization))
-        self.layer3 = tf.keras.layers.Dense(128, activation='sigmoid',
-                                           kernel_regularizer=tf.keras.regularizers.l2(l2_regularization))
-        self.layer4 = tf.keras.layers.Dense(16, activation='sigmoid',
-                                           kernel_regularizer=tf.keras.regularizers.l2(l2_regularization))
-        self.dropout = tf.keras.layers.Dropout(rate=dropout_rate)
-        self.layer5 = tf.keras.layers.Dense(4, activation='tanh',
-                                            kernel_regularizer=tf.keras.regularizers.l2(l2_regularization))
-        self.output = tf.keras.layers.Dense(1, activation='tanh')
+    def __init__(self, dof, regularization=0.3):
+        super(NeuralNetwork, self).__init__()
+        self.model = nn.Sequential(
+            nn.Linear(dof, 4),
+            nn.BatchNorm1d(4),
+            nn.ReLU(),
+            nn.Linear(4, 4),
+            nn.BatchNorm1d(4),
+            nn.ReLU(),
+            nn.Linear(4, 1),
+            nn.Tanh()
+        )
+        self.regularization = regularization
+        self.initialize_weights()
+        
+        
+    def initialize_weights(self):
+        for m in self.model:
+            if isinstance(m, nn.Linear):
+                nn.init.kaiming_normal_(m.weight, nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
 
-    def __call__(self, x):
+    def forward(self, x):
         """
         Compute the forward pass of the neural network.
 
         Args:
-            x (tf.Tensor): Input tensor.
+            x (torch.Tensor): Input tensor.
 
         Returns:
-        tf.Tensor: Output tensor representing the neural network's prediction.
+            torch.Tensor: Output tensor representing the neural network's prediction.
         """
-        x = self.layer1(x)
-        x = self.layer2(x)
-        x = self.layer3(x)
-        x = self.layer4(x)
-        x = self.dropout(x)
-        x = self.layer5(x)
-        x = self.output(x)
-        return x
+        return torch.sqrt(torch.abs(self.model(x)))
 
-
-
-class WaveFunction(tf.Module):
+class WaveFunction(nn.Module):
     """
     Wavefunction model based on a neural network.
 
@@ -82,110 +114,226 @@ class WaveFunction(tf.Module):
 
     Attributes:
         NN: A neural network model (NeuralNetwork instance).
-
-    Methods:
-        __call__(x):
-            Compute the wavefunction for a given input configuration `x`.
-        get_trainable_variables():
-            Get the trainable variables of the wavefunction model.
+        symmetric: A boolean indicating if the wavefunction should be symmetric.
     """
-    def __init__(self):
-        self.NN = NeuralNetwork()
+    def __init__(self, particles, hamiltonian):
+        super(WaveFunction, self).__init__()
+        self.H_name = hamiltonian.name
+        if self.H_name == 'two_fermions':
+            dof = 2 * particles
+            self.dof = 2
+            self.particles = particles
+        else:
+            dof = particles
+            self.dof = particles
+        self.NN = NeuralNetwork(dof=dof)
+        self.symmetric = hamiltonian.symmetric
+        self.particles = particles
 
-    def __call__(self, x):
+    def forward(self, x):
         """
-        Compute the wavefunction for a given input configuration.
+        Compute the forward pass of the wavefunction model.
 
         Args:
-            x (tf.Tensor): Input configuration tensor.
+            x (torch.Tensor): Input tensor.
 
         Returns:
-            tf.Tensor: Wavefunction values for the input configuration.
+            torch.Tensor: Output tensor representing the wavefunction's prediction.
         """
-        return self.NN(x)
+        if self.symmetric == True:
+            return self.symmetric_forward(x)
+        elif self.symmetric == False:
+            return self.antisymmetric_forward(x)
+        else:
+            return self.NN(x)
 
-    def get_trainable_variables(self):
+    def symmetric_forward(self, x):
         """
-        Get the trainable variables of the wavefunction model.
+        Compute the symmetric forward pass.
+
+        Args:
+            x (torch.Tensor): Input tensor.
 
         Returns:
-            List[tf.Variable]: List of trainable variables.
+            torch.Tensor: Symmetric output.
         """
-        return self.NN.trainable_variables
+        perms = list(itertools.permutations(range(self.particles)))
+        output = 0
+        for perm in perms:
+            permuted_x = self.permute_input(x, perm)
+            output += self.NN(permuted_x)
+        return output / len(perms)
 
+    def antisymmetric_forward(self, x):
+        """
+        Compute the antisymmetric forward pass.
+
+        Args:
+            x (torch.Tensor): Input tensor.
+
+        Returns:
+            torch.Tensor: Antisymmetric output.
+        """
+        perms = list(itertools.permutations(range(self.particles)))
+        output = 0
+        for perm in perms:
+            permuted_x = self.permute_input(x, perm)
+            parity = self.permutation_parity(perm)
+            output += parity * self.NN(permuted_x)
+        
+        return output / len(perms)
+
+    def permute_input(self, x, perm):
+        """
+        Permute the input tensor according to the permutation.
+
+        Args:
+            x (torch.Tensor): Input tensor.
+            perm (tuple): Permutation.
+
+        Returns:
+            torch.Tensor: Permuted input tensor.
+        """
+        x_reshaped = x.view(x.size(0), self.particles, self.dof)
+        permuted_x = x_reshaped[:, perm, :]
+        permuted_x = permuted_x.view(x.size(0), -1)
+        return permuted_x
+
+
+    @staticmethod
+    def permutation_parity(perm):
+        """
+        Compute the parity of a permutation.
+
+        Args:
+            perm (tuple): A permutation.
+
+        Returns:
+            int: Parity of the permutation (1 for even, -1 for odd).
+        """
+        perm = list(perm)
+        inversions = 0
+        for i in range(len(perm)):
+            for j in range(i + 1, len(perm)):
+                if perm[i] > perm[j]:
+                    inversions += 1
+        return 1 if inversions % 2 == 0 else -1
     
-def print_trainable_variables(wavefunction):
+def compute_force(x, psi):
     """
-    Print the names and shapes of trainable variables in a given wavefunction.
+    Compute the quantum force for a given configuration.
 
     Args:
-        wavefunction (WaveFunction): The wavefunction object containing trainable variables.
+        x (torch.Tensor): The current configurations, shape (num_samples, dof).
+        psi (callable): A function that computes the wavefunction for a given configuration.
 
     Returns:
-        None
+        torch.Tensor: The computed quantum force, shape (num_samples, dof).
     """
-    trainable_variables = wavefunction.get_trainable_variables()
-    for var in trainable_variables:
-        print(f"Variable Name: {var.name}, Variable Shape: {var.shape}")
+    x = x.requires_grad_(True)
+    psi_x = psi(x)
+    grad_psi = torch.autograd.grad(outputs=psi_x, inputs=x, grad_outputs=torch.ones_like(psi_x), create_graph=True)[0]
+    force = 2 * grad_psi / psi_x
+    return force
 
-def metropolis_hastings_update(x, psi, delta):
+def compute_greens_function(x, proposed_x, F, proposed_F, delta):
+    """
+    Compute the Green's function for a given configuration.
+
+    Args:
+        x (torch.Tensor): The old configurations, shape (num_samples, dof).
+        proposed_x (torch.Tensor): The new configurations, shape (num_samples, dof).
+        F (torch.Tensor): The old quantum force, shape (num_samples, dof).
+        proposed_F (torch.Tensor): The new quantum force, shape (num_samples, dof).
+
+    Returns:
+        torch.Tensor: The computed Green's function, shape (num_samples,).
+    """
+    G = 0.5 * (F + proposed_F) * (0.5**2 * delta * (F - proposed_F) - proposed_x + x)
+    G = torch.sum(G, dim=1)
+    G = torch.exp(G)
+    return G
+
+def metropolis_hastings_update(x, num_particles, psi, delta, hamiltonian):
     """
     Perform a Metropolis-Hastings update for a set of configurations.
 
     Args:
-        x (tf.Tensor): The current configurations, shape (num_samples, dof).
+        x (torch.Tensor): The current configurations, shape (num_samples, dof).
         psi (callable): A function that computes the wavefunction for a given configuration.
         delta (float): The step size for the Metropolis-Hastings update.
 
     Returns:
-        tf.Tensor: Updated configurations after Metropolis-Hastings updates, shape (num_samples, dof).
+        torch.Tensor: Updated configurations after Metropolis-Hastings updates, shape (num_samples, dof).
     """
-    num_samples, dof = x.shape
     
-    proposed_x = x + delta * tf.random.normal(x.shape, dtype=tf.float32)
+    name = hamiltonian.name
     
+    num_samples, dof_times_particles = x.shape
+    dof = int(dof_times_particles / num_particles)
+    
+    F = compute_force(x, psi)
+    
+    proposed_x = x + torch.sqrt(torch.tensor(delta)) * torch.randn_like(x) + 0.5 * delta * F
+    proposed_F = compute_force(proposed_x, psi)
+        
+    if name == 'calogero_sutherland':
+        x = torch.sort(x, dim=1).values
+        proposed_x = torch.sort(proposed_x, dim=1).values
+      
     psi_current = psi(x)
     psi_proposed = psi(proposed_x)
     
-    acceptance_prob = tf.minimum(1.0, tf.square(tf.abs(psi_proposed) / tf.abs(psi_current)))
-    random_numbers = tf.random.uniform((num_samples,))
-    accept_mask = random_numbers[:, tf.newaxis] < acceptance_prob
     
-    x = tf.where(accept_mask, proposed_x, x)
-    
+    G = compute_greens_function(x, proposed_x, F, proposed_F, delta)
+
+    if dof == 2:
+        G = G.unsqueeze(-1)
+        acceptance_prob = torch.min(torch.tensor(1.0), G * torch.min(torch.tensor(1.0), (psi_proposed / psi_current)**2))
+    else:
+        acceptance_prob = torch.min(torch.tensor(1.0), G * torch.squeeze(torch.min(torch.tensor(1.0), (psi_proposed / psi_current)**2), dim=-1)).unsqueeze(1)
+     
+    random_numbers = torch.rand(num_samples)
+    accept_mask = random_numbers.unsqueeze(1) < acceptance_prob
+    x = torch.where(accept_mask, proposed_x, x)
     return x
 
-def metropolis_hastings_spin_update(spins, psi):
+def metropolis_hastings_spin_update(samples, psi, hamiltonian):
     """
     Perform a Metropolis-Hastings update for a set of spin configurations.
 
     Args:
-        spins (tf.Tensor): The current spin configurations, shape (num_samples, dof).
+        samples (torch.Tensor): The current spin configurations, shape (num_samples, num_particles, 1).
         psi (callable): A function that computes the wavefunction for a given configuration.
 
     Returns:
-        tf.Tensor: Updated spin configurations after Metropolis-Hastings updates, shape (num_samples, dof).
+        torch.Tensor: Updated spin configurations after Metropolis-Hastings updates, shape (num_samples, num_particles, 1).
     """
-    num_samples, dof = spins.shape
-    
-    proposed_spins = tf.where(tf.random.uniform(spins.shape) > 0.5, 0.5, -0.5)
-    
-    psi_current = psi(spins)
-    psi_proposed = psi(proposed_spins)
-    
-    acceptance_prob = tf.minimum(1.0, tf.square(tf.abs(psi_proposed) / tf.abs(psi_current)))
-    random_numbers = tf.random.uniform((num_samples,))
-    accept_mask = random_numbers[:, tf.newaxis] < acceptance_prob
-    
-    spins = tf.where(accept_mask, proposed_spins, spins)
-    
-    return spins
+    M, N = samples.shape
+
+    rand_indices = torch.randint(0, N, (M,))
+
+    updates = -samples[range(M), rand_indices]
+
+    proposed_samples = samples.clone()
+    proposed_samples[range(M), rand_indices] = updates
+
+    psi_current = psi(samples)
+    psi_proposed = psi(proposed_samples)
+
+    acceptance_prob = torch.min(torch.tensor(1.0), (psi_proposed / psi_current) ** 2)
+
+    random_numbers = torch.rand(M, 1)
+    accept_mask = random_numbers < acceptance_prob
+    samples = torch.where(accept_mask, proposed_samples, samples)
+
+    return samples
 
 
 
 def variational_monte_carlo(wavefunction, hamiltonian, num_particles, num_samples,
                             num_iterations, learning_rate, dof, delta,
-                            firstrun=True, target_energy=None, verbose=None):
+                            verbose=None, debug=False):
     """
     Perform Variational Monte Carlo (VMC) optimization to find the ground state energy.
 
@@ -198,64 +346,79 @@ def variational_monte_carlo(wavefunction, hamiltonian, num_particles, num_sample
         learning_rate (float): The initial learning rate for the optimizer.
         dof (int): The degrees of freedom in the system.
         delta (float): The Metropolis-Hastings step size.
-        firstrun (bool): Flag to indicate if this is the first run (for handling NaN/inf values).
-        target_energy (float): The target energy (if known).
         verbose (bool): Whether or not to print progress.
 
     Returns:
         energy (float): The final ground state energy of the system
     """
-        
-    optimizer = tf.optimizers.Adam(learning_rate)
+    
+    optimizer = torch.optim.Adam(wavefunction.NN.parameters(), lr=learning_rate)
+    # torch.autograd.set_detect_anomaly(True)                     
     
     if hamiltonian.spin: #lattice particle spin
-        samples = [tf.Variable(tf.where(tf.random.uniform((num_samples, dof)) > 0.5, 0.5, -0.5), trainable=True) 
+        samples = [torch.where(torch.rand(num_samples, dof) > 0.5, 0.5, -0.5)
          for _ in range(num_particles)]
 
     else: #free particles
-        samples = [tf.Variable(tf.random.normal((num_samples, dof), dtype=tf.float32), trainable=True) 
+        samples = [torch.randn(num_samples, dof)
                  for _ in range(num_particles)]
+        
+    samples = torch.cat(samples, dim=-1)
+    
         
     energies = []
         
     for iteration in range(num_iterations):
-        for i in range(num_particles):
-            if hamiltonian.spin:
-                samples[i] = metropolis_hastings_spin_update(samples[i], wavefunction)
-            else:
-                samples[i] = metropolis_hastings_update(samples[i], wavefunction, delta)
-
-        with tf.GradientTape(persistent=True) as tape:
-            loss_value = loss(wavefunction, hamiltonian, samples)
-
-        gradients = tape.gradient(loss_value, wavefunction.get_trainable_variables())
         
-        if np.isnan(loss_value.numpy()).any() or np.isinf(loss_value.numpy()).any():
-            if firstrun and verbose:
-                print("NaN or inf encountered in configuration. Trying new initial configuration(s)...")
-            wavefunction = WaveFunction()
-            if hamiltonian.x_0:
-                hamiltonian.x_0 = 0.5
-            return variational_monte_carlo(wavefunction, hamiltonian, num_particles, 
-                                           num_samples, num_iterations,
-                                           learning_rate, dof, delta,
-                                           firstrun=False, target_energy=target_energy,
-                                           verbose=verbose)
+        samples = samples.detach()
         
-        optimizer.apply_gradients(zip(gradients, wavefunction.get_trainable_variables()))
+        psi = normalize(wavefunction, samples, hamiltonian.name)
+
+        if not hamiltonian.spin: #free particles
+            samples = metropolis_hastings_update(samples, num_particles, psi, delta, hamiltonian)
+                
+        if hamiltonian.spin: #lattice spin
+            psi = normalize(wavefunction, samples, hamiltonian.name)
+            samples = metropolis_hastings_spin_update(samples, psi, hamiltonian)
+            
+        optimizer.zero_grad()
+        psi = normalize(wavefunction, samples, hamiltonian.name) #renormalize after moves (recalculating normalization constant)
+        loss_value = loss(psi, hamiltonian, samples)
+
+        loss_value.backward()
+        optimizer.step()
         
         if iteration % 10 == 0 and verbose:
-            print(f"Iteration {int(iteration/10+1)}: Loss = {loss_value.numpy():.3f}")
+            print(f'{iteration}: {loss_value.item()}')
+        elif iteration+1 == num_iterations and verbose:
+            print(f'{iteration+1}: {loss_value.item()}')
             
-        if hamiltonian.x_0:
-            hamiltonian.x_0 -= 0.0004
-
-        energies.append(-loss_value.numpy())
+        energies.append(loss_value.item())
+        if debug:
+            for name, param in wavefunction.NN.named_parameters():
+                if param.grad is not None:
+                    print(f'Gradient for {name}: {param.grad.norm().item()}')
         
-    
-    if hamiltonian.x_0:
-        print(hamiltonian.x_0)
-    
-    samples = tf.concat(samples, axis=1).numpy()
-    
-    return -loss_value.numpy(), hamiltonian.energy, samples
+        if hamiltonian.x_0: # ugly
+            factor = (hamiltonian.x_0_initial-hamiltonian.x_0_minimum)/num_iterations
+            if hamiltonian.x_0 > hamiltonian.x_0_minimum:  
+                hamiltonian.x_0 -= factor
+                if hamiltonian.x_0 < hamiltonian.x_0_minimum:
+                    hamiltonian.x_0 = hamiltonian.x_0_minimum
+            else:
+                hamiltonian.x_0 = hamiltonian.x_0_minimum
+                
+    if debug:
+        import matplotlib.pyplot as plt
+        with torch.no_grad():
+            x_values = torch.linspace(-5, 5, 1000).view(-1, dof)
+            psi_values = torch.square(psi(x_values))
+            plt.figure(figsize=(10, 6))
+            plt.plot(x_values.numpy(), psi_values.numpy(), label='Wavefunction')
+            plt.xlabel('x')
+            plt.ylabel(r'\psi(x)')
+            plt.title(f'Wavefunction ψ(x) for {hamiltonian.name}')
+            plt.legend()
+            plt.show()
+            
+    return loss_value.item(), hamiltonian, np.real(energies), samples

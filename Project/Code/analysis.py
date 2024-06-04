@@ -53,3 +53,7 @@ def plot_particle_density(positions, dof):
             ax.set_title("Particle Position Density (3D)")
 
     plt.show()
+    
+    
+def relative_error(measured, exact):
+    return (measured-exact)/exact

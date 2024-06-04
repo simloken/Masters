@@ -4,7 +4,7 @@ os.environ["JAX_PLATFORM_NAME"] = "cpu"
 
 import netket as nk
 
-N = 10
+N = 12
 hi = nk.hilbert.Spin(s=1 / 2, N=N)
 from netket.operator.spin import sigmax,sigmaz 
 Gamma = -1

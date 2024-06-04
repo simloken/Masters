@@ -1,6 +1,18 @@
 import numpy as np
 
 class Energies:
+    
+    def harmonic_oscillator(omega):
+        """
+        Return the true energy of a harmonic oscillator in one dimension
+        
+        Returns:
+            float: The true energy
+            
+        """
+        
+        return 1/2 * omega
+    
     def two_fermions():
         """
         Return the true energy of a two fermion system in two dimensions
@@ -35,7 +47,7 @@ class Energies:
         Returns:
             str: Approximation of the true energy
         """
-        approx = -N/2 * np.sqrt(6.5)
+        approx = N/2 * np.sqrt(6.5)
         return '~ %g' %(approx)
     
     
@@ -52,4 +64,4 @@ class Energies:
             str: Approximation of the true energy
         """
         approx = -0.0013*L**3+(0.05)*L**2+(-2.3)*L+1.08
-        return '~ %g' %(approx)
+        return '~ %g' %(-approx)
