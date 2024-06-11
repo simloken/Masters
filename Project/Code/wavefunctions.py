@@ -42,9 +42,8 @@ class Wavefunctions:
         product = np.prod(np.abs(x[i] - x[j])**self.beta)
         return np.exp(-0.5 * self.alpha * np.sum(x**2)) * product
     def ising(self, spins):
-        spins = np.array(spins).astype(float)
-        # Reshape spins to (N, M)
-        spins = spins.reshape((spins.shape[0], spins.shape[1]))     
+        spins = np.array(spins).astype(float) 
+        spins = spins.reshape((spins.shape[0], spins.shape[1]))
         return np.prod(np.tanh(self.beta * spins))
     def heisenberg(self, spins):
         spins = np.array(spins)

@@ -4,6 +4,8 @@ import torch.nn as nn
 
 import itertools
 
+from analysis import sample_distribution_history, plot_wavefunction
+
 def loss(wavefunction, model, samples):
     """
     Calculate the loss function for Variational Monte Carlo (VMC) optimization.
@@ -30,8 +32,12 @@ def loss(wavefunction, model, samples):
     
     expectation_H = psi_star_vals * H_psi
     loss_value = torch.mean(expectation_H / psi_magnitude_squared)
-        
+    
+    
+    # local_energy = torch.mean(torch.square(psi_vals) * (H_psi/psi_vals)) #?
+            
     return loss_value
+
 
 def normalize(wavefunction, samples, name):
     """
@@ -45,19 +51,17 @@ def normalize(wavefunction, samples, name):
         callable: The normalized wavefunction.
     """
     if name == 'calogero_sutherland':
-        samples, _ = torch.sort(samples, dim=0)
+        samples, _ = torch.sort(samples, dim=1)
     
     psi_vals = wavefunction(samples)
-    psi_magnitude_squared = psi_vals**2
+    psi_magnitude_squared = torch.square(psi_vals)
     
     integral = torch.mean(psi_magnitude_squared)
     
+  
+    
     def normalized_wavefunction(x):
-        if torch.is_complex(x):
-            cintegral = integral.type(torch.complex64)
-            return wavefunction(x) / torch.sqrt(cintegral)
-        else:
-            return wavefunction(x) / torch.sqrt(integral)
+        return wavefunction(x) / torch.sqrt(integral)
     
     return normalized_wavefunction
 
@@ -72,17 +76,17 @@ class NeuralNetwork(nn.Module):
     def __init__(self, dof, regularization=0.3):
         super(NeuralNetwork, self).__init__()
         self.model = nn.Sequential(
-            nn.Linear(dof, 4),
-            nn.BatchNorm1d(4),
+            nn.Linear(dof, 64),
+            nn.BatchNorm1d(64),
             nn.ReLU(),
-            nn.Linear(4, 4),
-            nn.BatchNorm1d(4),
+            nn.Linear(64, 32),
+            nn.BatchNorm1d(32),
             nn.ReLU(),
-            nn.Linear(4, 1),
+            nn.Linear(32, 1),
             nn.Tanh()
         )
         self.regularization = regularization
-        self.initialize_weights()
+        # self.initialize_weights()
         
         
     def initialize_weights(self):
@@ -102,7 +106,7 @@ class NeuralNetwork(nn.Module):
         Returns:
             torch.Tensor: Output tensor representing the neural network's prediction.
         """
-        return torch.sqrt(torch.abs(self.model(x)))
+        return torch.abs(self.model(x))
 
 class WaveFunction(nn.Module):
     """
@@ -120,13 +124,12 @@ class WaveFunction(nn.Module):
         super(WaveFunction, self).__init__()
         self.H_name = hamiltonian.name
         if self.H_name == 'two_fermions':
-            dof = 2 * particles
+            dofxparticles = 2 * particles
             self.dof = 2
-            self.particles = particles
         else:
-            dof = particles
-            self.dof = particles
-        self.NN = NeuralNetwork(dof=dof)
+            dofxparticles = particles
+            self.dof = 1
+        self.NN = NeuralNetwork(dof=dofxparticles)
         self.symmetric = hamiltonian.symmetric
         self.particles = particles
 
@@ -150,74 +153,86 @@ class WaveFunction(nn.Module):
     def symmetric_forward(self, x):
         """
         Compute the symmetric forward pass.
-
+    
         Args:
             x (torch.Tensor): Input tensor.
-
+    
         Returns:
             torch.Tensor: Symmetric output.
         """
         perms = list(itertools.permutations(range(self.particles)))
+        perms_tensor = torch.tensor(perms, dtype=torch.long, device=x.device)
+        
         output = 0
-        for perm in perms:
+        for perm in perms_tensor:
             permuted_x = self.permute_input(x, perm)
             output += self.NN(permuted_x)
+        
         return output / len(perms)
-
+    
     def antisymmetric_forward(self, x):
         """
         Compute the antisymmetric forward pass.
-
+    
         Args:
             x (torch.Tensor): Input tensor.
-
+    
         Returns:
             torch.Tensor: Antisymmetric output.
         """
         perms = list(itertools.permutations(range(self.particles)))
+        perms_tensor = torch.tensor(perms, dtype=torch.long, device=x.device)
+        parity = self.permutation_parity(perms_tensor)
+        
         output = 0
-        for perm in perms:
+        for perm, p in zip(perms_tensor, parity):
             permuted_x = self.permute_input(x, perm)
-            parity = self.permutation_parity(perm)
-            output += parity * self.NN(permuted_x)
+            output += p * self.NN(permuted_x)
         
         return output / len(perms)
-
+    
+    
     def permute_input(self, x, perm):
         """
         Permute the input tensor according to the permutation.
-
+    
         Args:
             x (torch.Tensor): Input tensor.
             perm (tuple): Permutation.
-
+    
         Returns:
             torch.Tensor: Permuted input tensor.
         """
-        x_reshaped = x.view(x.size(0), self.particles, self.dof)
-        permuted_x = x_reshaped[:, perm, :]
-        permuted_x = permuted_x.view(x.size(0), -1)
+        if self.dof > 1:
+            x_reshaped = x.view(x.size(0), self.particles, self.dof)
+            permuted_x = x_reshaped[:, perm, :]
+            permuted_x = permuted_x.view(x.size(0), -1)
+        else:
+            x_reshaped = x.view(x.size(0), self.particles)
+            permuted_x = x_reshaped[:, perm]
+            permuted_x = permuted_x.view(x.size(0), -1)
         return permuted_x
-
-
+    
     @staticmethod
-    def permutation_parity(perm):
+    def permutation_parity(perms):
         """
-        Compute the parity of a permutation.
-
+        Compute the parity of permutations.
+    
         Args:
-            perm (tuple): A permutation.
-
+            perms (torch.Tensor): A tensor of permutations.
+    
         Returns:
-            int: Parity of the permutation (1 for even, -1 for odd).
+            torch.Tensor: A tensor containing the parity of each permutation (1 for even, -1 for odd).
         """
-        perm = list(perm)
-        inversions = 0
-        for i in range(len(perm)):
-            for j in range(i + 1, len(perm)):
-                if perm[i] > perm[j]:
-                    inversions += 1
-        return 1 if inversions % 2 == 0 else -1
+        inversions = torch.zeros(perms.size(0), device=perms.device)
+        for i in range(perms.size(1)):
+            for j in range(i + 1, perms.size(1)):
+                inversions += (perms[:, i] > perms[:, j]).float()
+        parity = 1 - 2 * (inversions % 2)
+        return parity
+    
+
+    
     
 def compute_force(x, psi):
     """
@@ -367,26 +382,33 @@ def variational_monte_carlo(wavefunction, hamiltonian, num_particles, num_sample
     
         
     energies = []
+    sample_dist = []
         
     for iteration in range(num_iterations):
         
         samples = samples.detach()
         
         psi = normalize(wavefunction, samples, hamiltonian.name)
+        
+        if len(sample_dist) == 0:
+            sample_dist.append(samples)
 
         if not hamiltonian.spin: #free particles
             samples = metropolis_hastings_update(samples, num_particles, psi, delta, hamiltonian)
                 
         if hamiltonian.spin: #lattice spin
-            psi = normalize(wavefunction, samples, hamiltonian.name)
             samples = metropolis_hastings_spin_update(samples, psi, hamiltonian)
             
+            
+        psi = normalize(wavefunction, samples, hamiltonian.name) #renormalize after moves (recalculating normalization constant)        
+            
         optimizer.zero_grad()
-        psi = normalize(wavefunction, samples, hamiltonian.name) #renormalize after moves (recalculating normalization constant)
         loss_value = loss(psi, hamiltonian, samples)
 
         loss_value.backward()
         optimizer.step()
+
+        psi = normalize(wavefunction, samples, hamiltonian.name) #renormalize after weight updates
         
         if iteration % 10 == 0 and verbose:
             print(f'{iteration}: {loss_value.item()}')
@@ -394,6 +416,8 @@ def variational_monte_carlo(wavefunction, hamiltonian, num_particles, num_sample
             print(f'{iteration+1}: {loss_value.item()}')
             
         energies.append(loss_value.item())
+        sample_dist.append(samples)
+        
         if debug:
             for name, param in wavefunction.NN.named_parameters():
                 if param.grad is not None:
@@ -407,18 +431,11 @@ def variational_monte_carlo(wavefunction, hamiltonian, num_particles, num_sample
                     hamiltonian.x_0 = hamiltonian.x_0_minimum
             else:
                 hamiltonian.x_0 = hamiltonian.x_0_minimum
+      
                 
     if debug:
-        import matplotlib.pyplot as plt
         with torch.no_grad():
-            x_values = torch.linspace(-5, 5, 1000).view(-1, dof)
-            psi_values = torch.square(psi(x_values))
-            plt.figure(figsize=(10, 6))
-            plt.plot(x_values.numpy(), psi_values.numpy(), label='Wavefunction')
-            plt.xlabel('x')
-            plt.ylabel(r'\psi(x)')
-            plt.title(f'Wavefunction ψ(x) for {hamiltonian.name}')
-            plt.legend()
-            plt.show()
-            
+            print(torch.sum(psi(samples)))
+            plot_wavefunction(psi, hamiltonian.name, dof, num_particles)
+            sample_distribution_history(np.array(sample_dist), hamiltonian.name, dof)          
     return loss_value.item(), hamiltonian, np.real(energies), samples

@@ -55,7 +55,7 @@ class NN:
             self.name = 'ising'
             self.has_plots = False
             self.spin = True
-            self.symmetric = '!'
+            self.symmetric = '!' #neither symmetric nor antisymmetric
             if self.params == 'default':
                 self.params = [-1,-1]
             
@@ -64,7 +64,7 @@ class NN:
             self.name = 'heisenberg'
             self.has_plots = False
             self.spin = True
-            self.symmetric = '!'
+            self.symmetric = '!' #neither symmetric nor antisymmetric
             if self.params == 'default':
                 self.params = []
                 
@@ -159,39 +159,36 @@ class NN:
         Returns:
             torch.Tensor: The Hamiltonian operator.
         """
-        x = positions
+        samples, N = positions.shape
         omega, beta = self.params
-        
+        x_0 = self.x_0
+
+        x = positions
         x.requires_grad_(True)
-        
         psi_x = psi(x)
-        
-        psi_x_grad = torch.autograd.grad(psi_x, x, grad_outputs=torch.ones_like(psi_x), create_graph=True)[0]
-        psi_x_laplacian = torch.autograd.grad(psi_x_grad, x, grad_outputs=torch.ones_like(psi_x_grad), create_graph=True)[0]
-        
-        kinetic_energy = -0.5 * psi_x_laplacian.sum(dim=1, keepdim=True)
-        
-        x_squared = (x**2).sum(dim=1, keepdim=True)
-        potential_energy = 0.5 * omega**2 * x_squared * psi_x
-        
-        interaction_energy = 0
-        M = x.shape[1]
-        for i in range(M): #should vectorize
-            for j in range(i + 1, M):
-                x_ij = x[:, i] - x[:, j]
-                x_ij_squared = x_ij**2
-                regularized_interaction = torch.tanh(x_ij / self.x_0)**2 / x_ij_squared
-                interaction_energy += beta * (beta - 1) * regularized_interaction
-        
-        interaction_energy = interaction_energy.view(-1, 1) * psi_x
-        
-        H_psi = kinetic_energy + potential_energy + interaction_energy
+        gradient_psi_x = torch.autograd.grad(psi_x, x, grad_outputs=torch.ones_like(psi_x), create_graph=True)[0]
+        gradient_psi_x_i = torch.chunk(gradient_psi_x, N, dim=1)
+
+        kinetic_energy = sum(-0.5 * torch.sum(grad ** 2, dim=1) for grad in gradient_psi_x_i)
+        potential_energy = 0.5 * omega ** 2 * torch.sum(x ** 2, dim=1) * psi_x.squeeze()
+        H_Psi = kinetic_energy + potential_energy
+
+        x_expanded_1 = x.unsqueeze(2)
+        x_expanded_2 = x.unsqueeze(1)
+        x_ij = x_expanded_1 - x_expanded_2
+        term = beta * (beta - 1) * torch.tanh(x_ij / x_0) ** 2 / (x_ij ** 2 + 1e-8)
+        mask = torch.triu(torch.ones((N, N)), diagonal=1)
+        term = term * mask
+        interaction_energy = torch.sum(term, dim=[1, 2])
+
+        H_Psi += interaction_energy * psi_x.squeeze()
 
         if self.first_pass:
-            self.energy = Energies.calogero_sutherland(M, omega, beta)
+            self.energy = Energies.calogero_sutherland(N, omega, beta)
             self.first_pass = False
 
-        return H_psi
+
+        return H_Psi
 
     def ising(self, psi, spins):
         """

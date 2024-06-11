@@ -50,7 +50,7 @@ def normalize(wavefunction, samples, dof, name, params=None):
         callable: The normalized wavefunction.
     """
     if name == 'calogero_sutherland':
-        samples = jnp.sort(samples, axis=0)
+        samples = jnp.sort(samples, axis=1)
             
     psi_vals = wavefunction(samples, dof)
     psi_magnitude_squared = jnp.square(psi_vals)

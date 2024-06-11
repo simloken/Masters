@@ -36,8 +36,8 @@ from hamiltonians import RBM, NN
 
 
 
-# run_neural_network_model(NN('harmonic_oscillator', 1), 1, 500, 200, 1, 1, verbose=True, load=False)
+# run_neural_network_model(NN('harmonic_oscillator', 1), 1, 2000, 200, 1, 1, verbose=True, load=False)
 # run_neural_network_model(NN('two_fermions', 1), 2, 200, 200, 1, 2, verbose=True, load=False)
-# run_neural_network_model(NN('calogero_sutherland', [1, 2]), 6, 200, 200, 1, 1, verbose=True, load=False)
+run_neural_network_model(NN('calogero_sutherland', [1, 2]), 3, 200, 200, 1, 1, verbose=True, load=False)
 # run_neural_network_model(NN('ising', [-1, -1]), 6, 200, 200, 1, 1, verbose=True, load=False)
-run_neural_network_model(NN('heisenberg', []), 6, 200, 200, 1, 1, verbose=True, load=False)
+# run_neural_network_model(NN('heisenberg', []), 6, 200, 200, 1, 1, verbose=True, load=False)
