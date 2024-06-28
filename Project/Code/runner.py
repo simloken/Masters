@@ -11,11 +11,11 @@ from NN import WaveFunction
 from RBM import RBM
 from NN import variational_monte_carlo as VMCNN
 from RBM import variational_monte_carlo as VMCRBM
-from analysis import plot_particle_density, relative_error
-from ansatz import pre_train_NN
+from analysis import plot_particle_density, relative_error, plot_energy_convergence, check_uniformity
+from ansatz import pre_train_NN, pre_train_RBM
 
 def run_neural_network_model(hamiltonian, num_particles, num_samples, num_iterations,
-                             runs, dof, delta=0.01, learning_rate=0.005,
+                             runs, dof, delta=0.001, learning_rate=0.001,
                              load=True, verbose=False, debug=False):
     """
     Run a neural network-based model to estimate the ground state energy of a quantum system.
@@ -47,7 +47,6 @@ def run_neural_network_model(hamiltonian, num_particles, num_samples, num_iterat
     energy_evolution = []
     t0 = time.time()
     print('Starting:', datetime.datetime.now().strftime('%H:%M:%S'))
-    
     
     for k in range(runs):
         
@@ -86,11 +85,18 @@ def run_neural_network_model(hamiltonian, num_particles, num_samples, num_iterat
         energy_evolution.append(energies)
                 
         if hamiltonian.has_plots:
-            plot_particle_density(positions, dof)
+            plot_particle_density(np.array(positions), dof)
             plt.show()
+            
+        if hamiltonian.name == 'ising':
+            check_uniformity(2*positions)
         
         if hamiltonian.x_0:
             hamiltonian.x_0 = 0.5
+            
+        for layer in wavefunction.NN.model.children():
+           if hasattr(layer, 'reset_parameters'):
+               layer.reset_parameters()
             
         
         
@@ -102,23 +108,15 @@ def run_neural_network_model(hamiltonian, num_particles, num_samples, num_iterat
     if runs > 1 and verbose == True:
         print('====================')
 
-    
-                    
-    
-    
-    for i in range(len(energy_storage)):
-        plt.plot(energy_evolution[i][:], label=f"Run {i+1}")
     if isinstance(true_energy, str):
         true_energy_str = true_energy
         true_energy = float(true_energy[2:])
-    plt.plot([true_energy]*len(energy_evolution[0][:]), label='True Energy', color='k')
-    plt.ylim([true_energy-5, true_energy+5])
-    plt.xlim([0, num_iterations])
-    plt.grid(True)
-    plt.title(f'Energy evolution over {len(energy_storage)} runs for {hamiltonian.name}')
-    plt.legend()
-    plt.show()
+                    
     
+    plot_energy_convergence(energy_evolution, true_energy, hamiltonian.name)
+    
+
+        
     print(f"\nMean energy over {runs} runs: {np.mean(energy_storage):.3} ± {np.std(energy_storage):.3} a.u.")
     print(f"Mean relative error over {runs} runs: {relative_error(np.mean(energy_storage), true_energy)}")
     if 'true_energy_str' in locals():
@@ -129,7 +127,7 @@ def run_neural_network_model(hamiltonian, num_particles, num_samples, num_iterat
     
 def run_restricted_boltzmann_model(hamiltonian, num_particles, num_hidden, 
                                    num_samples, num_iterations,
-                             runs, dof, delta=0.005, learning_rate=0.01,
+                             runs, dof, delta=0.05, learning_rate=0.001,
                              load=True, verbose=False, debug=False):
     """
     Run a Restricted Boltzmann Machine (RBM) model to estimate the ground state energy of a quantum system.
@@ -149,33 +147,66 @@ def run_restricted_boltzmann_model(hamiltonian, num_particles, num_hidden,
 
     """
     energy_storage = []
-    num_visible = num_particles * dof
-    ground_state_energy = []
+    energy_evolution = []
     t0 = time.time()
     print('Starting:', datetime.datetime.now().strftime('%H:%M:%S'))
     for k in range(runs):
         
+        weights_path = f'./weights/{hamiltonian.name}_weights.npz'
+        seed = np.random.randint(5000)
+        key = random.PRNGKey(seed)
+        if load:
+            if not os.path.isfile(weights_path):
+                if verbose:
+                    print(f'No pre-trained model found. Pre-training new model for {hamiltonian.name}')
+                pre_train_RBM(hamiltonian.name, num_particles, num_hidden, dof, key)
+                pretrained = True
+        
+            if os.path.isfile(weights_path):
+                if verbose:
+                    print(f'Loaded pre-trained model made at {time.ctime(os.path.getmtime(weights_path))}')
+                pre_trained = True
+                    
+        else:
+            pre_trained = False
+        
         trun = time.time()
-        key = random.PRNGKey(0)
-        rbm = RBM(num_visible, num_hidden, key, learning_rate)
+        
+        rbm = RBM(num_particles, num_hidden, key, dof, learning_rate, pre_trained, hamiltonian.name)
         energy, hamiltonian, energies, positions = VMCRBM(rbm, hamiltonian, num_particles, num_samples, num_iterations,
                                         learning_rate, dof, delta, verbose=verbose, debug=debug)
     
-        ground_state_energy.append(energy)
+        true_energy = hamiltonian.energy
+        energy_storage.append(energy)
+        
+        energy_evolution.append(energies)
         
     
-        estimated_energy = np.mean(ground_state_energy)
         if runs > 1:
-            print(f"Run #{k+1}\nEnergy: {estimated_energy:.3f} a.u.\nTime: {(time.time() - trun):.2f}s")
+            print(f"Run #{k+1}\nEnergy: {energy:.3f} a.u.\nTime: {(time.time() - trun):.2f}s")
         
         
-        energy_storage.append(estimated_energy)
         if hamiltonian.has_plots:
             plot_particle_density(positions, dof)
             plt.show()
         
+        
+        if hamiltonian.name == 'ising':
+            check_uniformity(2*positions)
+            
     true_energy = hamiltonian.energy
-    print(f"\nMean energy over {runs} runs: {np.mean(energy_storage)} a.u.")
+    
+    if isinstance(true_energy, str):
+        true_energy_str = true_energy
+        true_energy = float(true_energy[2:])
+    
+    plot_energy_convergence(energy_evolution, true_energy, hamiltonian.name)
+    
+    
+    print(f"\nMean energy over {runs} runs: {np.mean(energy_storage):.3} ± {np.std(energy_storage):.3} a.u.")
     print(f"Mean relative error over {runs} runs: {relative_error(np.mean(energy_storage), true_energy)}")
-    print(f"True energy of system: {hamiltonian.energy} a.u.")
-    print(f"Total run time: {(time.time() - t0):.2f}s\nAverage run time: {((time.time() - t0)/runs):.2f}s")
+    if 'true_energy_str' in locals():
+        print(f"True energy of system: {true_energy_str} a.u.")
+    else:
+        print(f"True energy of system: {true_energy} a.u.")
+    print(f"Total run time: {(time.time() - t0):.2f}s\nAverage run time: {((time.time() - t0)/runs):.2f}s\n")

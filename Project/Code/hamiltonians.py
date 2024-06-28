@@ -23,7 +23,7 @@ class NN:
         if hamiltonian == 'harmonic_oscillator':
             self.hamiltonian = self.harmonic_oscillator
             self.name = 'harmonic_oscillator'
-            self.has_plots = False
+            self.has_plots = True
             self.spin = False
             self.symmetric = True
             if self.params == 'default':
@@ -32,7 +32,7 @@ class NN:
         elif hamiltonian == 'two_fermions':
             self.hamiltonian = self.two_fermions
             self.name = 'two_fermions'
-            self.has_plots = False
+            self.has_plots = True
             self.spin = False
             self.symmetric = False
             if self.params == 'default':
@@ -40,13 +40,13 @@ class NN:
             
         elif hamiltonian == 'calogero_sutherland':
             self.hamiltonian = self.calogero_sutherland
-            self.x_0 = 0.3
+            self.x_0 = 1
             self.x_0_initial = self.x_0
-            self.x_0_minimum = 0.1
+            self.x_0_minimum = 0.68
             self.name = 'calogero_sutherland'
             self.has_plots = True
             self.spin = False
-            self.symmetric = True
+            self.symmetric = '!'
             if self.params == 'default':
                 self.params = [1,2]
             
@@ -88,24 +88,28 @@ class NN:
         omega = self.params
 
         x.requires_grad_(True)
+        
     
         psi_x = psi(x)
         
-        psi_x_grad = torch.autograd.grad(psi_x, x, grad_outputs=torch.ones_like(x), create_graph=True)[0]
+        gradient_psi_x = torch.autograd.grad(psi_x, x, grad_outputs=torch.ones_like(x), create_graph=True)[0]
         
-        psi_x_grad2 = torch.autograd.grad(psi_x_grad, x, grad_outputs=torch.ones_like(x), create_graph=True)[0]
-        
-        kinetic_energy = - 1/2 * psi_x_grad2
+        gradient_psi_x2 = torch.autograd.grad(gradient_psi_x, x, grad_outputs=torch.ones_like(x), create_graph=True)[0]
+                
+        kinetic_energy = - 1/2 * gradient_psi_x2.sum(dim=1, keepdim=True)
         
         potential_energy = 0.5*omega**2 * x**2 * psi_x
         
-        hamiltonian_operator = kinetic_energy + potential_energy
+        H_Psi = kinetic_energy + potential_energy
 
         if self.first_pass:
             self.energy = Energies.harmonic_oscillator(omega)
             self.first_pass = False
         
-        return hamiltonian_operator
+        # print('K:', torch.mean(kinetic_energy).detach().numpy())
+        # print('V:', torch.mean(potential_energy).detach().numpy())
+        
+        return H_Psi
 
     def two_fermions(self, psi, positions):
         """
@@ -126,10 +130,10 @@ class NN:
         
         psi_x = psi(x)
         
-        psi_x_grad = torch.autograd.grad(psi_x, x, grad_outputs=torch.ones_like(psi_x), create_graph=True)[0]
-        psi_x_laplacian = torch.autograd.grad(psi_x_grad, x, grad_outputs=torch.ones_like(psi_x_grad), create_graph=True)[0]
+        gradient_psi_x = torch.autograd.grad(psi_x, x, grad_outputs=torch.ones_like(psi_x), create_graph=True)[0]
+        laplacian_psi_x = torch.autograd.grad(gradient_psi_x, x, grad_outputs=torch.ones_like(gradient_psi_x), create_graph=True)[0]
         
-        kinetic_energy = -0.5 * psi_x_laplacian.sum(dim=1, keepdim=True)
+        kinetic_energy = -0.5 * laplacian_psi_x.sum(dim=1, keepdim=True)
         
         r_squared = (x**2).sum(dim=1, keepdim=True)
         potential_energy = 0.5 * omega**2 * r_squared * psi_x
@@ -159,32 +163,34 @@ class NN:
         Returns:
             torch.Tensor: The Hamiltonian operator.
         """
-        samples, N = positions.shape
+        
+        x = positions
         omega, beta = self.params
         x_0 = self.x_0
 
-        x = positions
+
         x.requires_grad_(True)
-        psi_x = psi(x)
+        N, M = x.shape
+        psi_x = psi(x) 
         gradient_psi_x = torch.autograd.grad(psi_x, x, grad_outputs=torch.ones_like(psi_x), create_graph=True)[0]
-        gradient_psi_x_i = torch.chunk(gradient_psi_x, N, dim=1)
+        laplacian_psi_x = torch.autograd.grad(gradient_psi_x, x, grad_outputs=torch.ones_like(gradient_psi_x), create_graph=True)[0]
+        
+        kinetic_energy = -0.5 * laplacian_psi_x
 
-        kinetic_energy = sum(-0.5 * torch.sum(grad ** 2, dim=1) for grad in gradient_psi_x_i)
-        potential_energy = 0.5 * omega ** 2 * torch.sum(x ** 2, dim=1) * psi_x.squeeze()
-        H_Psi = kinetic_energy + potential_energy
-
-        x_expanded_1 = x.unsqueeze(2)
-        x_expanded_2 = x.unsqueeze(1)
-        x_ij = x_expanded_1 - x_expanded_2
-        term = beta * (beta - 1) * torch.tanh(x_ij / x_0) ** 2 / (x_ij ** 2 + 1e-8)
-        mask = torch.triu(torch.ones((N, N)), diagonal=1)
-        term = term * mask
-        interaction_energy = torch.sum(term, dim=[1, 2])
-
-        H_Psi += interaction_energy * psi_x.squeeze()
+        r_squared = x**2
+        potential_energy = 0.5 * omega**2 * r_squared*psi_x
+        
+        interaction_energy = 0
+        for i in range(M):
+            for j in range(i + 1, M):
+                x_ij = positions[:, i] - positions[:, j]
+                interaction_energy += beta * (beta - 1) * (torch.tanh(x_ij / x_0)**2) / (x_ij**2)
+        
+        H_Psi = kinetic_energy.sum(axis=1) + potential_energy.sum(axis=1) + interaction_energy * psi_x
+        
 
         if self.first_pass:
-            self.energy = Energies.calogero_sutherland(N, omega, beta)
+            self.energy = Energies.calogero_sutherland(M, omega, beta)
             self.first_pass = False
 
 
@@ -202,64 +208,54 @@ class NN:
             torch.Tensor: The Hamiltonian operator.
         """
         Gamma, V = self.params
-        samples, N = spins.shape
-
-        interaction_term = V * torch.sum(spins * torch.roll(spins, shifts=-1, dims=1), dim=1)
-
-        transverse_field_term = 0
-        for i in range(N):
+        N, M = spins.shape
+        
+        interaction_term = torch.zeros(N)
+        for i in range(M):
+            interaction_term -= V * spins[:, i] * spins[:, (i+1) % M] * psi(spins).squeeze()
+        
+        transverse_term = torch.zeros(N)
+        for i in range(M):
             flipped_spins = spins.clone()
             flipped_spins[:, i] *= -1
-            transverse_field_term += Gamma * (psi(flipped_spins) / psi(spins))
-
-        hamiltonian_operator = interaction_term + transverse_field_term
+            transverse_term -= Gamma * psi(flipped_spins).squeeze()
+        
+        H_Psi = interaction_term + transverse_term
+                
 
         if self.first_pass:
-            self.energy = Energies.ising(N)
+            self.energy = Energies.ising(M, Gamma, V)
             self.first_pass = False
 
-        hamiltonian_operator = hamiltonian_operator.unsqueeze(0)
-
-        return hamiltonian_operator
+        return H_Psi
 
     def heisenberg(self, psi, spins):
-        """
-        Calculate the Hamiltonian operator for the 1/2 spin Heisenberg antiferromagnetic chain.
-
-        Args:
-            psi (callable): A PyTorch neural network estimating the wavefunction.
-            spins (list of torch.Tensor): List of spin configurations for each particle.
-
-        Returns:
-            torch.Tensor: The Hamiltonian operator.
-        """
-        samples, N = spins.shape
-
-        interaction_term = 0
-        for i in range(N):
-            flipped_spins_x = spins.clone()
-            flipped_spins_x[:, i] *= -1
-            flipped_spins_x[:, (i + 1) % N] *= -1
-
-            flipped_spins_y = spins.clone().to(dtype=torch.complex64)
-            flipped_spins_y[:, i] *= -1j
-            flipped_spins_y[:, (i + 1) % N] *= 1j
-
-            interaction_term += (
-                (psi(flipped_spins_x) / psi(spins))
-                + (psi(flipped_spins_y) / psi(spins))
-                + (spins[:, i] * spins[:, (i + 1) % N])
-            )
-
-        hamiltonian_operator = interaction_term
-
-        if self.first_pass:
-            self.energy = Energies.heisenberg(N)
-            self.first_pass = False
-
-        hamiltonian_operator = hamiltonian_operator.unsqueeze(0)
+        N, M = spins.shape
+        J = 1
+        H_Psi = torch.zeros(N)
         
-        return hamiltonian_operator
+        for i in range(M):
+            next_i = (i + 1) % M
+            
+            flipped_spins_xx = spins.clone()
+            flipped_spins_xx[:, i] *= -1
+            flipped_spins_xx[:, next_i] *= -1
+            
+            flipped_spins_yy = spins.clone()
+            flipped_spins_yy[:, i] *= -1
+            flipped_spins_yy[:, next_i] *= -1
+            
+            sigma_z_term = spins[:, i] * spins[:, next_i]
+            
+            H_Psi += J * (psi(flipped_spins_xx).squeeze() + 
+                          psi(flipped_spins_yy).squeeze() + 
+                          sigma_z_term * psi(spins).squeeze())
+    
+        if self.first_pass:
+            self.energy = Energies.heisenberg(M)
+            self.first_pass = False
+        
+        return H_Psi
    
     
     
@@ -352,6 +348,8 @@ class RBM:
             self.spin = False
             if self.params == 'default':
                 self.params = 1
+            self.symmetric = '!'
+            self.binary = False
         
         elif hamiltonian == 'two_fermions':
             self.hamiltonian = self.two_fermions
@@ -360,17 +358,21 @@ class RBM:
             self.spin = False
             if self.params == 'default':
                 self.params = 1
+            self.symmetric = '!'
+            self.binary = False
             
         elif hamiltonian == 'calogero_sutherland':
             self.hamiltonian = self.calogero_sutherland
-            self.x_0 = 0.3
+            self.x_0 = 1
             self.x_0_initial = self.x_0
-            self.x_0_minimum = 0.1
+            self.x_0_minimum = 0.68
             self.name = 'calogero_sutherland'
             self.has_plots = True
             self.spin = False
             if self.params == 'default':
                 self.params = [1,2]
+            self.symmetric = True
+            self.binary = False
             
         elif hamiltonian == 'ising':
             self.hamiltonian = self.ising
@@ -379,6 +381,8 @@ class RBM:
             self.spin = True
             if self.params == 'default':
                 self.params = [-1,-1]
+            self.symmetric = ('!')
+            self.binary = True
             
         elif hamiltonian == 'heisenberg':
             self.hamiltonian = self.heisenberg
@@ -387,9 +391,11 @@ class RBM:
             self.spin = True
             if self.params == 'default':
                 self.params = []
+            self.symmetric = ('!')
+            self.binary = True
                 
             
-    def harmonic_oscillator(self, psi, positions):
+    def harmonic_oscillator(self, psi, positions, W, a, b):
         """
         Calculate the Hamiltonian operator for a 1D harmonic oscillator.
 
@@ -402,29 +408,25 @@ class RBM:
         """
         x = positions
         omega = self.params
-        psi_x = psi(x, 1)
-        gradient_psi_x = jax.vmap(jax.grad(lambda x_i: psi(x_i, 1, grad=True).squeeze()))(x)
     
-        kinetic_energy = -0.5 * jnp.square(gradient_psi_x)
-
-        potential_energy = 0.5 * omega**2 * jnp.square(x)*jnp.squeeze(psi_x)
+        psi_x = psi(x, 1.0, 0, W, a, b)
         
+        gradient_psi_x2 = psi(x, 1, 2, W, a, b)
+            
+        kinetic_energy = -0.5 * gradient_psi_x2
         
-        hamiltonian_operator = kinetic_energy + potential_energy
-        
-
+        potential_energy = 0.5 * omega**2 * x.squeeze()**2 * psi_x.squeeze()
+    
+        H_Psi = kinetic_energy + potential_energy
+    
         if self.first_pass:
             self.energy = Energies.harmonic_oscillator(omega)
             self.first_pass = False
-            
-
-        hamiltonian_operator = jnp.expand_dims(hamiltonian_operator, axis=0)
-                
-        return hamiltonian_operator
-
+                                
+        return H_Psi
     
     
-    def two_fermions(self, psi, positions):
+    def two_fermions(self, psi, positions, W, a, b):
         """
         Calculate the Hamiltonian operator for two interacting fermions (electrons).
 
@@ -436,42 +438,32 @@ class RBM:
             jnp.ndarray: The Hamiltonian operator.
         """
         x = positions
-        N, dof_times_particles = x.shape
-        dof = dof_times_particles//2
-        x1, x2 = jnp.split(x, 2, axis=1)
         omega = self.params
-
-        psi_x = psi(x, 2)
-            
-        gradient_psi_x = jax.vmap(jax.grad(lambda x_i: psi(x_i, 1, grad=True).squeeze()))(x)
+    
+        psi_x = psi(x, 2, 0, W, a, b)
+    
+        gradient_psi_x2 = psi(x, 2, 2, W, a, b)
+    
+        kinetic_energy = -0.5 * gradient_psi_x2
         
-        gradient_psi_x_i = jnp.split(gradient_psi_x, 2, axis=1)
-
-        kinetic_energy_1 = -0.5 * jnp.sum(jnp.square(gradient_psi_x_i[0]), axis=1)
-        kinetic_energy_2 = -0.5 * jnp.sum(jnp.square(gradient_psi_x_i[1]), axis=1)
-
-
-        potential_energy_1 = 0.5 * omega**2 * jnp.sum(jnp.square(x1), axis=1)*jnp.sum(psi_x)
-        potential_energy_2 = 0.5 * omega**2 * jnp.sum(jnp.square(x2), axis=1)*jnp.sum(psi_x)
-
-        epsilon = 1e-8
-        r_ij = jnp.linalg.norm(x1[:, jnp.newaxis, :] - x2, axis=2)
-        interaction_energy = psi_x * jnp.sum(1.0 / (r_ij + epsilon), axis=1) / N
-
-        hamiltonian_operator = (
-            kinetic_energy_1 + kinetic_energy_2 + potential_energy_1 + potential_energy_2 + interaction_energy
-        )
-
+        
+    
+        r_squared = jnp.sum(x**2, axis=1, keepdims=True)
+        potential_energy = 0.5 * omega**2 * r_squared.squeeze() * psi_x
+            
+        r1 = x[:, :2]
+        r2 = x[:, 2:]
+        r12 = jnp.linalg.norm(r1 - r2, axis=1, keepdims=True)
+        interaction_energy = (1 / r12) * psi_x
+        H_psi = kinetic_energy + potential_energy + interaction_energy
+    
         if self.first_pass:
             self.energy = Energies.two_fermions()
             self.first_pass = False
 
-        hamiltonian_operator = jnp.expand_dims(hamiltonian_operator, axis=0)
-        
-        
-        return hamiltonian_operator
+        return H_psi
     
-    def calogero_sutherland(self, psi, positions):
+    def calogero_sutherland(self, psi, positions, W, a, b):
         """
         Calculate the Hamiltonian operator for the Calogero-Sutherland model.
 
@@ -482,89 +474,85 @@ class RBM:
         Returns:
             jnp.ndarray: The Hamiltonian operator.
         """
-        samples, N = positions.shape
+        x = positions
         omega, beta = self.params
         x_0 = self.x_0
-        x = positions
 
-        psi_x = psi(x, 1)
-        gradient_psi_x = jax.vmap(jax.grad(lambda x_i: psi(x_i, 1, grad=True).squeeze()))(x)
-        gradient_psi_x_i = jnp.split(gradient_psi_x, N, axis=1)
 
-        kinetic_energy = 0
-        for i in range(N):
-            kinetic_energy += -0.5 * jnp.sum(jnp.square(gradient_psi_x_i[i]), axis=1)
+        N, M = x.shape
+        psi_x = psi(x, 1, 0, W, a, b)
+    
+        laplacian_psi_x = psi(x, 1, 2, W, a, b)
+        
+        kinetic_energy = -0.5 * laplacian_psi_x
 
-        potential_energy = 0.5 * omega**2 * jnp.sum(jnp.square(x), axis=1) * psi_x
-        hamiltonian_operator = kinetic_energy + potential_energy
-
-        x_expanded_1 = jnp.expand_dims(x, axis=2)
-        x_expanded_2 = jnp.expand_dims(x, axis=1)
-        x_ij = x_expanded_1 - x_expanded_2
-
-        term = beta * (beta - 1) * jnp.square(jnp.tanh(x_ij / x_0)) / (jnp.square(x_ij) + 1e-8)
-        mask = jnp.tri(N, N, -1, dtype=jnp.float32)  # upper triangular part is 0
-        term = term * mask
-
-        interaction_energy = jnp.sum(term, axis=[1, 2])
-        hamiltonian_operator += interaction_energy * psi_x
+        r_squared = x**2
+        potential_energy = 0.5 * omega**2 * r_squared*jnp.expand_dims(psi_x, axis=1)
+        1
+        interaction_energy = 0
+        for i in range(M):
+            for j in range(i + 1, M):
+                x_ij = positions[:, i] - positions[:, j]
+                interaction_energy += beta * (beta - 1) * (jnp.tanh(x_ij / x_0)**2) / (x_ij**2)
+        
+        H_Psi = kinetic_energy + potential_energy.sum(axis=1) + interaction_energy * psi_x
+        
 
         if self.first_pass:
-            self.energy = Energies.calogero_sutherland(N, omega, beta)
+            self.energy = Energies.calogero_sutherland(M, omega, beta)
             self.first_pass = False
 
-        hamiltonian_operator = jnp.expand_dims(hamiltonian_operator, axis=0)
-        return hamiltonian_operator
+
+        return H_Psi
     
-    def ising(self, psi, spins):
+    def ising(self, psi, spins, W, a, b):
         Gamma, V = self.params
-
-        samples, N = spins.shape
-
-        interaction_term = V * jnp.sum(spins * jnp.roll(spins, -1, axis=1), axis=1)
-
-        def transverse_field_term_component(i, spins):
-            flipped_spins = spins.at[:, i].set(-spins[:, i])
-            return Gamma * (psi(flipped_spins, 1) / psi(spins, 1))
-
-        transverse_field_term = jnp.sum(jax.vmap(transverse_field_term_component, in_axes=(0, None))(jnp.arange(N), spins), axis=0)
-
-        hamiltonian_operator = interaction_term + transverse_field_term
+        N, M = spins.shape
+        
+        interaction_term = jnp.zeros(N)
+        for i in range(M):
+            interaction_term -= V * spins[:, i] * spins[:, (i+1) % M] * psi(spins, 1, 0, W, a, b).squeeze()
+        
+        transverse_term = jnp.zeros(N)
+        for i in range(M):
+            flipped_spins = spins.clone()
+            flipped_spins = flipped_spins.at[:, i].set(flipped_spins[:, i]*-1)
+            transverse_term -= Gamma * psi(flipped_spins, 1, 0, W, a, b).squeeze()
+        
+        H_Psi = interaction_term + transverse_term
+                
 
         if self.first_pass:
-            self.energy = Energies.ising(N)
+            self.energy = Energies.ising(M, Gamma, V)
             self.first_pass = False
 
-        hamiltonian_operator = jnp.expand_dims(hamiltonian_operator, axis=0)
-
-        return hamiltonian_operator
+        return H_Psi
     
-    def heisenberg(self, psi, spins):
-        samples, N = spins.shape
-
-        def interaction_term_component(i, spins):
+    def heisenberg(self, psi, spins, W, a, b):
+        N, M = spins.shape
+        J = 1
+        H_Psi = jnp.zeros(N)
+        
+        for i in range(M):
+            next_i = (i + 1) % M
             
-            flipped_spins_x = spins.at[:, i].set(-spins[:, i])
-            flipped_spins_x = flipped_spins_x.at[:, (i + 1) % N].set(-spins[:, (i + 1) % N])
+            flipped_spins_xx = spins.clone()
+            flipped_spins_xx = flipped_spins_xx.at[:, i].set(flipped_spins_xx[:, i]*-1)
+            flipped_spins_xx = flipped_spins_xx.at[:, next_i].set(flipped_spins_xx[:, i]*-1)
             
-            flipped_spins_y = spins.astype(jnp.complex64)
-            flipped_spins_y = flipped_spins_y.at[:, i].set(-1j * spins[:, i])
-            flipped_spins_y = flipped_spins_y.at[:, (i + 1) % N].set(1j * spins[:, (i + 1) % N])
+            flipped_spins_yy = spins.clone()
+            flipped_spins_yy = flipped_spins_yy.at[:, i].set(flipped_spins_yy[:, i]*-1)
+            flipped_spins_yy = flipped_spins_yy.at[:, next_i].set(flipped_spins_yy[:, i]*-1)
             
-            term_x = psi(flipped_spins_x, 1) / psi(spins, 1)
-            term_y = psi(flipped_spins_y, 1) / psi(spins, 1)
-            term_z = spins[:, i] * spins[:, (i + 1) % N]
+            sigma_z_term = spins[:, i] * spins[:, next_i]
             
-            return term_x + term_y + term_z
-
-        interaction_term = jnp.sum(jax.vmap(interaction_term_component, in_axes=(0, None))(jnp.arange(N), spins), axis=0)
-
-        hamiltonian_operator = interaction_term
+            H_Psi += J * (psi(flipped_spins_xx, 1, 0, W, a, b).squeeze() + 
+                          psi(flipped_spins_yy, 1, 0, W, a, b).squeeze() + 
+                          sigma_z_term * psi(spins, 1, 0, W, a, b).squeeze())
 
         if self.first_pass:
-            self.energy = Energies.heisenberg(N)
+            self.energy = Energies.heisenberg(M)
             self.first_pass = False
 
-        hamiltonian_operator = jnp.expand_dims(hamiltonian_operator, axis=0)
-
-        return hamiltonian_operator
+        
+        return H_Psi

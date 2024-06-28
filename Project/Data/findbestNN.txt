@@ -1,0 +1,69 @@
+Model: harmonic_oscillator - 2024-06-26 18:52
+Best params: (0.001, 0.001)
+Energy: Mean=0.5918585459391276, Std=0.07307214615290776
+Relative Error:0.18371709187825513
+
+Model: two_fermions - 2024-06-26 19:01
+Best params: (0.001, 0.0001)
+Energy: Mean=3.018643776575724, Std=0.13054832113714432
+Relative Error:0.0062145921919080456
+
+Model: harmonic_oscillator - 2024-06-26 19:20
+Best params: (0.001, 0.000325)
+Energy: Mean=0.5467060407002767, Std=0.017353438529596657
+Relative Error:0.09341208140055346
+
+Model: two_fermions - 2024-06-26 19:29
+Best params: (0.001, 0.001)
+Energy: Mean=2.988962093989054, Std=0.24326592027609945
+Relative Error:-0.0036793020036485955
+
+Model: harmonic_oscillator - 2024-06-26 19:38
+Best params: (0.001, 0.00055)
+Energy: Mean=0.5733755628267924, Std=0.010362583445696509
+Relative Error:0.14675112565358472
+
+Model: two_fermions - 2024-06-26 19:46
+Best params: (0.001, 0.00055)
+Energy: Mean=3.021420160929362, Std=0.4272145235762786
+Relative Error:0.00714005364312061
+
+Model: ising - 2024-06-27 00:28
+Best params: (0.001, 0.0001)
+Energy: Mean=6.274905999501546, Std=0.177471443262119
+Relative Error:-0.13942210204277217
+
+Model: heisenberg - 2024-06-27 00:54
+Best params: (0.05, 0.00055)
+Energy: Mean=11.364740371704102, Std=0.781459856484118
+Relative Error:0.023306564231993936
+
+Model: ising - 2024-06-27 01:18
+Best params: (1, 0.0001)
+Energy: Mean=5.669401327768962, Std=0.3572360530263226
+Relative Error:-0.2224646109894084
+
+Model: heisenberg - 2024-06-27 01:22
+Best params: (1, 0.0007750000000000001)
+Energy: Mean=262.0600992838542, Std=8.881130247280376
+Relative Error:22.596475682642037
+
+Model: ising - 2024-06-27 21:15
+Best params: (1, 0.0001)
+Energy: Mean=6.415203253428142, Std=0.8373629591413538
+Relative Error:-0.12018090291040077
+
+Model: heisenberg - 2024-06-27 21:18
+Best params: (1, 0.000325)
+Energy: Mean=10.996533711751303, Std=0.33723776395351807
+Relative Error:-0.009847584459494272
+
+Model: heisenberg - 2024-06-27 23:15
+Best params: (1, 0.0001)
+Energy: Mean=7.558635711669922, Std=0.25280271040401475
+Relative Error:-0.31940358623164966
+
+Model: harmonic_oscillator - 2024-06-28 02:53
+Best params: (0.001, 0.0001)
+Energy: Mean=0.956360399723053, Std=0.0
+Relative Error:0.912720799446106

@@ -1,0 +1,10 @@
+Model: harmonic_oscillator - 2024-06-24 22:57
+Best params: (0.037750000000000006, 0.000325)
+Energy: Mean=0.49562572266252314, Std=0.0
+Relative Error:-0.008748554674953724
+
+Model: harmonic_oscillator - 2024-06-25 18:09
+Best params: (0.025500000000000002, 0.001)
+Energy: Mean=0.5991847743752896, Std=0.0
+Relative Error:0.19836954875057922
+

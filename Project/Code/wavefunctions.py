@@ -1,4 +1,5 @@
 import numpy as np
+import torch
 
 class Wavefunctions:
     def __init__(self, name):
@@ -51,3 +52,44 @@ class Wavefunctions:
         return np.exp(self.alpha * np.sum(spins[:-1] * spins[1:]))
     
     
+class Analytical:
+    def __init__(self, name):
+        accepted_hamiltonians = ['harmonic_oscillator',
+                                 'two_fermions', 'calogero_sutherland',
+                                 'ising', 'heisenberg']
+        
+        if name not in accepted_hamiltonians:
+            raise ValueError('Unrecognized Hamiltonian, try: ', accepted_hamiltonians)
+            
+        
+        if name == 'harmonic_oscillator':
+            self.alpha = 0.5
+            self.wf = self.harmonic_oscillator
+        elif name == 'two_fermions':
+            self.alpha = 0.5
+            self.beta = 0.5
+            self.wf = self.two_fermions
+        elif name == 'calogero_sutherland':
+            self.alpha = 0.5
+            self.beta = 1.5
+            self.wf = self.calogero_sutherland
+        elif name == 'ising':
+            self.alpha = 0.5
+            self.beta = 0.5
+            self.wf = self.ising
+        elif name == 'heisenberg':
+            self.alpha = 1
+            self.wf = self.heisenberg    
+
+        self.m = 1
+        self.omega = 1
+        self.hbar = 1
+
+    def harmonic_oscillator(self, x, a):
+        # np.power(self.m*self.omega/(np.pi*self.hbar), .25)
+        return torch.exp(-a * x**2)
+        
+    
+    def calogero_sutherland(x):
+        beta = 2
+        return torch.exp(0.5*1*(-torch.sum(x))*torch.prod(x**beta))

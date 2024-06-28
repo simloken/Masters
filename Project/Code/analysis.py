@@ -76,8 +76,6 @@ def plot_wavefunction(psi, name, dof, particles):
 
         x_values = torch.cat(x_values_list, dim=1)
         psi_values = torch.square(psi(x_values))
-        print(x_values)
-        print(psi_values)
         plt.figure(figsize=(10, 6))
         plt.plot(x_values.numpy(), psi_values.numpy(), label='Wavefunction')
         plt.xlabel('x')
@@ -113,7 +111,6 @@ def sample_distribution_history(data, name, dof, bins=50, pause_duration=5):
         
         reshaped_data = reshape_data_1d(data)
         
-        # Generate a grid for KDE evaluation
         x_min, x_max = np.min(reshaped_data), np.max(reshaped_data)
         x_grid = np.linspace(x_min, x_max, bins)
 
@@ -122,21 +119,18 @@ def sample_distribution_history(data, name, dof, bins=50, pause_duration=5):
             kde_values = kde(x_grid)
             return kde_values
 
-        # Initial and final KDE values for the initial and final frames
         initial_data = reshaped_data[0].reshape(-1)
         final_data = reshaped_data[-1].reshape(-1)
         initial_kde_values = [compute_kde_1d(initial_data[i*samples:(i+1)*samples]) for i in range(num_particles)]
         final_kde_values = [compute_kde_1d(final_data[i*samples:(i+1)*samples]) for i in range(num_particles)]
 
-        # Calculate the maximum KDE values for initial and final distributions
         max_initial_kde = np.max(initial_kde_values, axis=0)
         max_final_kde = np.max(final_kde_values, axis=0)
         
-        # Plot initial and final KDE
         ax.plot(x_grid, max_initial_kde, color='red', label='Initial Distribution')
         ax.plot(x_grid, max_final_kde, color='green', label='Final Distribution')
+        
 
-        # Initial frame KDE for current distributions
         current_kde_values = [compute_kde_1d(reshaped_data[0, i, :]) for i in range(num_particles)]
         max_current_kde = np.max(current_kde_values, axis=0)
         line, = ax.plot(x_grid, max_current_kde, color='blue')
@@ -165,15 +159,12 @@ def sample_distribution_history(data, name, dof, bins=50, pause_duration=5):
         ax.set_xlabel('Position')
         ax.set_ylabel('Probability Density')
         
-        # Add iteration counter text with white color and black edge
         iteration_text = ax.text(0.05, 0.95, '', transform=ax.transAxes, fontsize=12, 
                                  verticalalignment='top', color='white', path_effects=[
                                      path_effects.withStroke(linewidth=3, foreground='black')])
         
-        # Add legend
         ax.legend()
         
-        # Create frame sequence with pauses
         frames = [0] * pause_duration + list(range(1, iterations - 1)) + [iterations - 1] * pause_duration
         ani = animation.FuncAnimation(fig, update, frames=frames, init_func=init,
                                       blit=True, repeat=False)
@@ -246,3 +237,154 @@ def sample_distribution_history(data, name, dof, bins=50, pause_duration=5):
     save_path = os.path.join(save_dir, f'{name}_sample_history.gif')
     ani.save(save_path, writer='pillow', fps=10, dpi=80)
     plt.close(fig)
+    
+    fig, axs = plt.subplots(1, 2)
+    if dof == 1:
+        axs[0].plot(x_grid, max_initial_kde, color='red', label='Initial Distribution')
+        axs[1].plot(x_grid, max_final_kde, color='green', label='Final Distribution')
+    elif dof == 2:
+        axs[0].contour(x_grid, y_grid, initial_kde_values, colors='red', alpha=0.5)
+        axs[1].contour(x_grid, y_grid, final_kde_values, colors='green', alpha=0.5)
+        
+    plt.suptitle('Initial and Final Distribution')
+    plt.show()
+    
+    
+def plot_energy_convergence(data, true_energy, name):
+    """
+    Plot the convergence of energy values with mean and standard deviation shading.
+    
+    Parameters:
+    - data: A list or numpy array of shape (M, N) where N is the number of samples and M is the number of runs.
+            It can also be a list or array of shape (1, M).
+    - true_energy: (Optional) The true energy value to plot as a horizontal line for reference.
+    """
+    data = np.array(data)
+    
+    if data.ndim == 1:
+        data = data.reshape(1, -1)
+    
+    mean_values = np.mean(data, axis=0)
+    std_values = np.std(data, axis=0)
+    
+    if np.shape(data)[0] > 1:
+        plt.plot(mean_values, label=r'Mean $E_L$')
+    else:
+        plt.plot(mean_values, label=r'$E_L$')
+    
+    
+    if np.shape(data)[0] > 1:
+        plt.fill_between(range(len(mean_values)), 
+                         mean_values - std_values, 
+                         mean_values + std_values, 
+                         color='b', alpha=0.2, label=r'$\sigma$')
+    
+
+    plt.axhline(y=true_energy, color='r', linestyle='--', label=r'$E_0$')
+    
+    
+    final_mean = mean_values[-1]
+    textstr = f"""FM: {final_mean:.3f} a.u.
+    MRE: {relative_error(final_mean, true_energy):.3f}"""
+    
+    plt.annotate(textstr,
+                 xy=(.95, .05), xycoords='axes fraction',
+                 fontsize=8, ha='right', va='bottom',
+                 bbox=dict(facecolor='white', alpha=0.6))
+        
+    plt.xlabel('Iterations')
+    plt.ylabel(r'$E_L$ [a.u.]')
+    plt.xlim([0, np.shape(data)[1]])
+    plt.ylim([true_energy-2, true_energy+5])
+    plt.legend()
+    plt.title(f'Energy convergence over {np.shape(data)[0]} run(s) for {name}')
+    
+    plt.show()
+    
+    
+def check_uniformity(spins):
+    """
+    Check the uniformity of spin configurations and visualize the results.
+
+    Args:
+        spins (np.ndarray): The spin configurations, shape (num_samples, num_spins).
+
+    Returns:
+        None
+    """
+    N, M = spins.shape
+
+    magnetizations = np.mean(spins, axis=1)
+
+    avg_magnetization = np.mean(magnetizations)
+    var_magnetization = np.var(magnetizations)
+
+    print(f"Average Magnetization: {avg_magnetization}")
+    print(f"Variance of Magnetization: {var_magnetization}")
+
+    plot_magnetization_histogram(magnetizations)
+
+    plot_spin_configurations(spins)
+
+    plot_spin_correlation_matrix(spins)
+
+    if np.all(np.abs(magnetizations) > 0.9):
+        print("All samples have uniform spins.")
+    else:
+        print("Not all samples have uniform spins.")
+        
+        
+def plot_magnetization_histogram(magnetizations):
+    """
+    Plot a histogram of the magnetizations.
+
+    Args:
+        magnetizations (np.ndarray): The magnetizations to plot, shape (num_samples,).
+
+    Returns:
+        None
+    """
+    plt.figure(figsize=(10, 6))
+    plt.hist(magnetizations, bins=20, edgecolor='k', alpha=0.7)
+    plt.title('Histogram of Magnetizations')
+    plt.xlabel('Magnetization')
+    plt.ylabel('Frequency')
+    plt.grid(True)
+    plt.show()
+    
+def plot_spin_configurations(spins):
+    """
+    Plot a heatmap of the spin configurations.
+
+    Args:
+        spins (np.ndarray): The spin configurations to plot, shape (num_samples, num_spins).
+
+    Returns:
+        None
+    """
+    plt.figure(figsize=(12, 8))
+    plt.imshow(spins, cmap='coolwarm', aspect='auto')
+    plt.colorbar(label='Spin')
+    plt.title('Heatmap of Spin Configurations')
+    plt.xlabel('Spin Index')
+    plt.ylabel('Sample Index')
+    plt.show()
+    
+def plot_spin_correlation_matrix(spins):
+    """
+    Plot a heatmap of the spin correlation matrix.
+
+    Args:
+        spins (np.ndarray): The spin configurations, shape (num_samples, num_spins).
+
+    Returns:
+        None
+    """
+    correlation_matrix = np.corrcoef(spins, rowvar=False)
+    plt.figure(figsize=(10, 8))
+    plt.imshow(correlation_matrix, cmap='coolwarm', aspect='auto')
+    plt.colorbar(label='Correlation')
+    plt.title('Heatmap of Spin Correlation Matrix')
+    plt.xlabel('Spin Index')
+    plt.ylabel('Spin Index')
+    plt.show()
