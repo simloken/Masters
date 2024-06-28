@@ -27,9 +27,11 @@ def run_neural_network_model(hamiltonian, num_particles, num_samples, num_iterat
         num_iterations (int): The number of training iterations for the neural network.
         runs (int): The number of runs to perform to estimate the mean energy.
         dof (int): Degrees of freedom.
-        params (list or float): Hyperparameters to pass to the Hamiltonian
-        target_energy (float, optional): The target energy for the system (if known). Default is None.
+        delta (float): The sampling step size
+        learning_rate (float): The optimizer learning rate
+        load (bool, optional): Whether or not to pre-train and/or load a model. Default is True
         verbose (bool, optional): If True, print detailed information during the runs. Default is False.
+        debug (bool, optional): If True, returns debug information like gradient tracking, sample distribution history, etc.. Default is False
 
     Returns:
         None
@@ -133,14 +135,18 @@ def run_restricted_boltzmann_model(hamiltonian, num_particles, num_hidden,
     Run a Restricted Boltzmann Machine (RBM) model to estimate the ground state energy of a quantum system.
 
     Args:
-        model (object): The model of the hamiltonian
+        hamiltonian (object): The model of the hamiltonian
         num_particles (int): The number of particles in the quantum system.
+        num_hidden (int): The number of hidden units in the RBM.
         num_samples (int): The number of Monte Carlo samples to generate.
         num_iterations (int): The number of training iterations for the RBM.
-        num_hidden (int): The number of hidden units in the RBM.
         runs (int): The number of runs to perform to estimate the mean energy.
         dof (int): Degrees of freedom.
+        delta (float): The sampling step size
+        learning_rate (float): The optimizer learning rate
+        load (bool, optional): Whether or not to pre-train and/or load a model. Default is True
         verbose (bool, optional): If True, print detailed information during the runs. Default is False.
+        debug (bool, optional): If True, returns debug information like gradient tracking, sample distribution history, etc.. Default is False
 
     Returns:
         None

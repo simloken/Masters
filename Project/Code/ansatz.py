@@ -9,13 +9,47 @@ from wavefunctions import Wavefunctions
 import os
 
 def trial_wavefunction(name):
+    """
+    Imports trial wave function ansatz
+
+    Args:
+        name (str or lst of str): The model to save the pre-trained network to
+
+    Returns:
+        wavefunction (callable): The wave function ansatz
+
+    """
     init = Wavefunctions(name)
     return init.wf
 
 def loss_fn(y_true, y_pred):
+    """
+    Calculates the mean squared loss
+
+    Args:
+        y_true (list-like): The values for the ansatz
+        y_pred (list-like): The values for the prediction
+    Returns:
+        loss (float): The mean squared error
+
+    """
     return torch.mean((y_true - y_pred) ** 2)
 
 def pre_train_NN(model, name, num_particles, dof):
+    """
+    Pre-train a Neural Network (NN) model according to an ansatz.
+
+    Args:
+        model (object): The Neural Network model to generate weights for
+        name (str or lst of str): The model to save the pre-trained network to
+        num_particles (int): The number of particles in the quantum system.
+        dof (int): Degrees of freedom.
+
+    Returns:
+        None
+
+    """
+    
     lattice = ['ising', 'heisenberg']
         
     if name in lattice:
@@ -41,6 +75,20 @@ def pre_train_NN(model, name, num_particles, dof):
 
 
 def pre_train_RBM(name, num_particles, num_hidden, dof, key):
+    """
+    Pre-train a Restricted Boltzmann Machine (RBM) model according to an ansatz.
+
+    Args:
+        name (str or lst of str): The model to save the pre-trained network to
+        num_particles (int): The number of particles in the quantum system.
+        num_hidden (int): The number of hidden units in the RBM.
+        dof (int): Degrees of freedom.
+        key (jax.random.key()): The key to use for (pseudo) random number generation
+
+    Returns:
+        None
+
+    """
     lattice = ['ising', 'heisenberg']
     keys = jax.random.split(key, num_particles)
     if name in lattice:

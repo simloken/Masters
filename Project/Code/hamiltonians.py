@@ -402,6 +402,9 @@ class RBM:
         Args:
             psi (callable): A function estimating the wavefunction.
             positions (jnp.ndarray): Positional tensors for each particle.
+            W (jnp.ndarray): Weight matrix of the RBM.
+            a (jnp.ndarray): Visible bias of the RBM.
+            b (jnp.ndarray): Hidden bias of the RBM.
 
         Returns:
             jnp.ndarray: The Hamiltonian operator.
@@ -433,6 +436,9 @@ class RBM:
         Args:
             psi (callable): A function estimating the wavefunction.
             positions (jnp.ndarray): Positional tensors for each particle.
+            W (jnp.ndarray): Weight matrix of the RBM.
+            a (jnp.ndarray): Visible bias of the RBM.
+            b (jnp.ndarray): Hidden bias of the RBM.
 
         Returns:
             jnp.ndarray: The Hamiltonian operator.
@@ -470,6 +476,9 @@ class RBM:
         Args:
             psi (callable): A function estimating the wavefunction.
             positions (jnp.ndarray): Positional tensors for each particle.
+            W (jnp.ndarray): Weight matrix of the RBM.
+            a (jnp.ndarray): Visible bias of the RBM.
+            b (jnp.ndarray): Hidden bias of the RBM.
 
         Returns:
             jnp.ndarray: The Hamiltonian operator.
@@ -506,6 +515,19 @@ class RBM:
         return H_Psi
     
     def ising(self, psi, spins, W, a, b):
+        """
+        Calculate the Hamiltonian operator for the Ising model.
+
+        Args:
+            psi (callable): A function estimating the wavefunction.
+            spins (jnp.ndarray): Spin configurations.
+            W (jnp.ndarray): Weight matrix of the RBM.
+            a (jnp.ndarray): Visible bias of the RBM.
+            b (jnp.ndarray): Hidden bias of the RBM.
+
+        Returns:
+            jnp.ndarray: The Hamiltonian operator.
+        """
         Gamma, V = self.params
         N, M = spins.shape
         
@@ -529,6 +551,19 @@ class RBM:
         return H_Psi
     
     def heisenberg(self, psi, spins, W, a, b):
+        """
+        Calculate the Hamiltonian operator for the Heisenberg model.
+
+        Args:
+            psi (callable): A function estimating the wavefunction.
+            spins (jnp.ndarray): Spin configurations.
+            W (jnp.ndarray): Weight matrix of the RBM.
+            a (jnp.ndarray): Visible bias of the RBM.
+            b (jnp.ndarray): Hidden bias of the RBM.
+
+        Returns:
+            jnp.ndarray: The Hamiltonian operator.
+        """
         N, M = spins.shape
         J = 1
         H_Psi = jnp.zeros(N)

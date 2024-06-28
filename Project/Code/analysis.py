@@ -7,9 +7,29 @@ import matplotlib.patheffects as path_effects
 import os
 
 def relative_error(measured, exact):
+    """
+    Calculates the relative error
+
+    Args:
+        measured (mean of np.ndarray): The measured energy
+        exact (float): The analytical solution
+
+    Returns:
+        error (float): The relative error
+    """
     return (measured-exact)/exact
 
 def plot_particle_density(positions, dof):
+    """
+    Plot particle density for a data array and the number of degrees of freedom
+
+    Args:
+        positions (np.ndarray): The positions to plot.
+        dof (int): The degrees of freedom
+
+    Returns:
+        None
+    """
     if dof not in [1, 2, 3]:
         raise ValueError("dof must be 1, 2, or 3")
         
@@ -63,6 +83,18 @@ def plot_particle_density(positions, dof):
     
     
 def plot_wavefunction(psi, name, dof, particles):
+    """
+    Debug tool to see the probability distribution of the wave function represnted by the NN model.
+
+    Args:
+        psi (callable): The wave function
+        name (str): The name of the model
+        dof (int): The degrees of freedom
+        particles (np.ndarray): The positional array
+
+    Returns:
+        None
+    """
     import torch
     if dof == 1:
         
@@ -88,16 +120,18 @@ def plot_wavefunction(psi, name, dof, particles):
 
 def sample_distribution_history(data, name, dof, bins=50, pause_duration=5):
     """
-    Creates an animated plot of sample distributions over iterations and saves it as a GIF.
-    
-    Parameters:
-    data (numpy array): A 3D numpy array of shape (iterations, samples, dof * num_particles).
-    name (str): The name to use for saving the GIF file.
-    dof (int): Degrees of freedom (1 for 1D plotting, 2 for 2D plotting, 3D pending implementation).
-    bins (int): Number of bins for the histogram or heatmap.
-    pause_duration (int): Duration to pause at the first and last frames (in frames).
+    Plot the energy or mean energy convergence over iterations and compare it to the analytical solution
+
+    Args:
+        data (np.ndarray): data (numpy array): A 3D numpy array of shape (iterations, samples, dof * num_particles).
+        name (str): The name to use for saving the GIF file.
+        dof (int): Degrees of freedom (1 for 1D plotting, 2 for 2D plotting, 3D pending implementation).
+        bins (int): Number of bins for the histogram or heatmap.
+        pause_duration (int): Duration to pause at the first and last frames (in frames).
+
+    Returns:
+        None
     """
-    
     print('Generating sample distribution history plot...')
     iterations, samples, total_dof = data.shape
     num_particles = total_dof // dof
@@ -252,12 +286,15 @@ def sample_distribution_history(data, name, dof, bins=50, pause_duration=5):
     
 def plot_energy_convergence(data, true_energy, name):
     """
-    Plot the convergence of energy values with mean and standard deviation shading.
-    
-    Parameters:
-    - data: A list or numpy array of shape (M, N) where N is the number of samples and M is the number of runs.
-            It can also be a list or array of shape (1, M).
-    - true_energy: (Optional) The true energy value to plot as a horizontal line for reference.
+    Plot the energy or mean energy convergence over iterations and compare it to the analytical solution
+
+    Args:
+        data (np.ndarray): The data to plot. Of shape (M, N) where M is the number of iterations and N the number of runs
+        true_energy (float): The analytical solution
+        name (str): The name of the model
+
+    Returns:
+        None
     """
     data = np.array(data)
     

@@ -64,6 +64,18 @@ def normalize(wavefunction, samples, dof, name, W, a, b):
 
 class RBM:
     def __init__(self, num_particles, num_hidden, key, dof, learning_rate, pre_trained, name):
+        """
+        Initialize the Restricted Boltzmann Machine (RBM) model.
+
+        Args:
+            num_particles (int): Number of particles.
+            num_hidden (int): Number of hidden units.
+            key (jax.random.PRNGKey): PRNG key for random number generation.
+            dof (int): Degrees of freedom.
+            learning_rate (float): Learning rate for the optimizer.
+            pre_trained (bool): Whether to load pre-trained weights.
+            name (str): Name for loading pre-trained weights.
+        """
         self.num_hidden = num_hidden
         self.particles = num_particles
         self.dof = dof
@@ -78,6 +90,12 @@ class RBM:
 
         
     def initialize_params(self):
+        """
+        Initialize the parameters of the RBM.
+
+        Returns:
+            tuple: Initialized weights and biases (W, a, b).
+        """
         key_W, key_a, key_b = jax.random.split(self.key, 3)
         W = 0.01 * jax.random.normal(key_W, (self.num_visible, self.num_hidden))
         # a = jax.random.normal(key_a, (self.num_visible,))
@@ -87,6 +105,20 @@ class RBM:
         return W, a, b
     
     def wavefunction(self, X, dof, grad, W, a, b):
+        """
+        Compute the wavefunction and its gradients.
+
+        Args:
+            X (jax.numpy.ndarray): Input configurations.
+            dof (int): Degrees of freedom.
+            grad (int): Gradient order (0 for no gradient, 1 for first-order, 2 for second-order).
+            W (jax.numpy.ndarray): Weight matrix.
+            a (jax.numpy.ndarray): Visible biases.
+            b (jax.numpy.ndarray): Hidden biases.
+
+        Returns:
+            jax.numpy.ndarray: Computed wavefunction or its gradient.
+        """
         sigma2 = 1
         psiFactor1 = jnp.sum((X - a) ** 2, axis=1)
         psiFactor1 = jnp.exp(-psiFactor1 / (2.0 * sigma2))
@@ -113,6 +145,20 @@ class RBM:
         return jnp.sqrt(psi/self.Z)
     
     def symmetric_forward(self, x, dof, grad, W, a, b):
+        """
+        Compute the symmetric forward pass.
+
+        Args:
+            x (jax.numpy.ndarray): Input configurations.
+            dof (int): Degrees of freedom.
+            grad (int): Gradient order.
+            W (jax.numpy.ndarray): Weight matrix.
+            a (jax.numpy.ndarray): Visible biases.
+            b (jax.numpy.ndarray): Hidden biases.
+
+        Returns:
+            jax.numpy.ndarray: Symmetrized wavefunction.
+        """
         perms = list(itertools.permutations(range(self.particles)))
         perms_tensor = jnp.array(perms, dtype=jnp.int32)
         
@@ -124,6 +170,20 @@ class RBM:
         return output / len(perms)
 
     def antisymmetric_forward(self, x, dof, grad, W, a, b):
+        """
+        Compute the antisymmetric forward pass.
+
+        Args:
+            x (jax.numpy.ndarray): Input configurations.
+            dof (int): Degrees of freedom.
+            grad (int): Gradient order.
+            W (jax.numpy.ndarray): Weight matrix.
+            a (jax.numpy.ndarray): Visible biases.
+            b (jax.numpy.ndarray): Hidden biases.
+
+        Returns:
+            jax.numpy.ndarray: Antisymmetrized wavefunction.
+        """
         perms = list(itertools.permutations(range(self.particles)))
         perms_tensor = jnp.array(perms, dtype=jnp.int32)
         parity = self.permutation_parity(perms_tensor)
@@ -136,6 +196,16 @@ class RBM:
         return output / len(perms)
 
     def permute_input(self, x, perm):
+        """
+        Permute the input configurations.
+
+        Args:
+            x (jax.numpy.ndarray): Input configurations.
+            perm (jax.numpy.ndarray): Permutation indices.
+
+        Returns:
+            jax.numpy.ndarray: Permuted input configurations.
+        """
         if self.dof > 1:
             x_reshaped = x.reshape(x.shape[0], self.particles, self.dof)
             permuted_x = x_reshaped[:, perm, :]
@@ -148,6 +218,15 @@ class RBM:
 
     @staticmethod
     def permutation_parity(perms):
+        """
+        Compute the parity of permutations.
+
+        Args:
+            perms (jax.numpy.ndarray): Permutation indices.
+
+        Returns:
+            jax.numpy.ndarray: Parities of the permutations.
+        """
         inversions = jnp.zeros(perms.shape[0], dtype=jnp.int32)
         for i in range(perms.shape[1]):
             for j in range(i + 1, perms.shape[1]):
@@ -157,6 +236,17 @@ class RBM:
 
     
     def partition_function(self, W, a, b):
+        """
+        Compute the partition function.
+
+        Args:
+            W (jax.numpy.ndarray): Weight matrix.
+            a (jax.numpy.ndarray): Visible biases.
+            b (jax.numpy.ndarray): Hidden biases.
+
+        Returns:
+            None
+        """
         sigma = 1.0
         scaling_factor = 2 * sigma**2
         
@@ -180,6 +270,20 @@ class RBM:
         self.Z = Z
         
     def psi(self, X, dof, grad, W, a, b):
+        """
+        Compute the wavefunction based on symmetry.
+
+        Args:
+            X (jax.numpy.ndarray): Input configurations.
+            dof (int): Degrees of freedom.
+            grad (int): Gradient order.
+            W (jax.numpy.ndarray): Weight matrix.
+            a (jax.numpy.ndarray): Visible biases.
+            b (jax.numpy.ndarray): Hidden biases.
+
+        Returns:
+            jax.numpy.ndarray: Computed wavefunction.
+        """
         if self.symmetric == True:
             return self.symmetric_forward(X, dof, grad, W, a, b)
         elif self.symmetric == False:
@@ -189,10 +293,32 @@ class RBM:
         
     
     def update(self, step, grads):
+        """
+        Update the parameters using the optimizer.
+
+        Args:
+            step (int): Current optimization step.
+            grads (tuple): Gradients of the parameters.
+
+        Returns:
+            None
+        """
         self.opt_state = self.opt_update(step, grads, self.opt_state)
         self.params = self.get_params(self.opt_state)
     
     def compute_gradients(self, wavefunction, hamiltonian, samples, dof):
+        """
+        Compute the gradients of the loss function.
+
+        Args:
+            wavefunction (callable): Wavefunction function.
+            hamiltonian (callable): Hamiltonian function.
+            samples (jax.numpy.ndarray): Input samples.
+            dof (int): Degrees of freedom.
+
+        Returns:
+            tuple: Loss value and gradients.
+        """
         W, a, b = self.params
         grad_loss = jax.value_and_grad(loss, argnums=(0, 1, 2))
         loss_value, grads = grad_loss(W, a, b, wavefunction, hamiltonian, samples, dof)
@@ -211,6 +337,8 @@ def compute_force(x, psi, dof, rbm):
     Args:
         x (jnp.ndarray): The current configurations, shape (num_samples, dof).
         psi (callable): A function that computes the wavefunction for a given configuration.
+        dof (int): Degrees of freedom.
+        rbm (RBM): The RBM model instance.
 
     Returns:
         jnp.ndarray: The computed quantum force, shape (num_samples, dof).
@@ -227,13 +355,15 @@ def compute_greens_function(x, proposed_x, F, delta, dof, name):
     Compute the Green's function for a given configuration.
 
     Args:
-        x (torch.Tensor): The old configurations, shape (num_samples, dof).
-        proposed_x (torch.Tensor): The new configurations, shape (num_samples, dof).
-        F (torch.Tensor): The old quantum force, shape (num_samples, dof).
+        x (jnp.ndarray): The old configurations, shape (num_samples, dof).
+        proposed_x (jnp.ndarray): The new configurations, shape (num_samples, dof).
+        F (jnp.ndarray): The old quantum force, shape (num_samples, dof).
         delta (float): The time step.
+        dof (int): Degrees of freedom.
+        name (str): Name of the system or model.
 
     Returns:
-        torch.Tensor: The computed Green's function, shape (num_samples,).
+        jnp.ndarray: The computed Green's function, shape (num_samples,).
     """
     num_samples, dof = x.shape
     N = dof
@@ -256,12 +386,15 @@ def metropolis_hastings_update(x, num_particles, psi, delta, hamiltonian, rbm):
     Perform a Metropolis-Hastings update for a set of configurations.
 
     Args:
-        x (np.ndarray): The current configurations, shape (num_samples, dof).
+        x (jnp.ndarray): The current configurations, shape (num_samples, dof).
+        num_particles (int): Number of particles in the system.
         psi (callable): A function that computes the wavefunction for a given configuration.
         delta (float): The step size for the Metropolis-Hastings update.
+        hamiltonian (object): The Hamiltonian of the system.
+        rbm (RBM): The RBM model instance.
 
     Returns:
-        np.ndarray: Updated configurations after Metropolis-Hastings updates, shape (num_samples, dof).
+        jnp.ndarray: Updated configurations after Metropolis-Hastings updates, shape (num_samples, dof).
     """
     W, a, b = rbm.params
     name = hamiltonian.name
@@ -316,12 +449,11 @@ def metropolis_hastings_spin_update(samples, psi, rbm):
     Args:
         samples (jnp.ndarray): The current spin configurations, shape (num_samples, num_particles, 1).
         psi (callable): A function that computes the wavefunction for a given configuration.
-        key (jax.random.PRNGKey): A JAX PRNG key for random number generation.
+        rbm (RBM): The RBM model instance.
 
     Returns:
         jnp.ndarray: Updated spin configurations after Metropolis-Hastings updates, shape (num_samples, num_particles, 1).
     """
-    
     W, a, b = rbm.params
     M, N = samples.shape
     key = rbm.key
@@ -350,8 +482,8 @@ def variational_monte_carlo(rbm, hamiltonian, num_particles, num_samples,
     Perform Variational Monte Carlo (VMC) optimization to find the ground state energy.
 
     Args:
-        wavefunction (RBM): The RBM wavefunction to optimize.
-        hamiltonian (function): The Hamiltonian of the system.
+        rbm (RBM): The RBM wavefunction to optimize.
+        hamiltonian (object): The Hamiltonian of the system.
         num_particles (int): The number of particles in the system.
         num_samples (int): The number of configurations to sample.
         num_iterations (int): The number of VMC iterations.
@@ -359,9 +491,10 @@ def variational_monte_carlo(rbm, hamiltonian, num_particles, num_samples,
         dof (int): The degrees of freedom in the system.
         delta (float): The Metropolis-Hastings step size.
         verbose (bool): Whether or not to print progress.
+        debug (bool): Whether or not to print debug information.
 
     Returns:
-        energy (float): The final ground state energy of the system.
+        tuple: The final ground state energy, Hamiltonian, energy history, and final samples.
     """
     
     keys = jax.random.split(rbm.key, num_particles)
